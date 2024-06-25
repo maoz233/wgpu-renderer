@@ -1,111 +1,101 @@
 const vertices = new Float32Array([0.0, 0.6, 0, 1, 1, 0, 0, 1, -0.5, -0.6, 0, 1, 0, 1, 0, 1, 0.5, -0.6, 0, 1, 0, 0, 1, 1,]);
 
 const shaderCode = `
-struct VertexOut {
-  @builtin(position) position : vec4f,
-  @location(0) color : vec4f
-}
+  struct VertexOut {
+    @builtin(position) position : vec4f,
+    @location(0) color : vec4f
+  }
 
-@vertex
-fn vertex_main(@location(0) position: vec4f,
-              @location(1) color: vec4f) -> VertexOut
-{
-  var output : VertexOut;
-  output.position = position;
-  output.color = color;
-  return output;
-}
+  @vertex
+  fn vertex_main(@location(0) position: vec4f,
+                @location(1) color: vec4f) -> VertexOut
+  {
+    var output : VertexOut;
+    output.position = position;
+    output.color = color;
+    return output;
+  }
 
-@fragment
-fn fragment_main(fragData: VertexOut) -> @location(0) vec4f
-{
-  return fragData.color;
-}
+  @fragment
+  fn fragment_main(fragData: VertexOut) -> @location(0) vec4f
+  {
+    return fragData.color;
+  }
 `;
 
 export default class Renderer {
-  adapter: GPUAdapter;
-  device: GPUDevice;
-  canvas: HTMLCanvasElement;
-  context: GPUCanvasContext;
-  presentationFormat: GPUTextureFormat;
-  vertexBuffer: GPUBuffer;
-  renderPipeline: GPURenderPipeline;
+  private adapter: GPUAdapter;
+  private device: GPUDevice;
+  private canvas: HTMLCanvasElement;
+  private context: GPUCanvasContext;
+  private presentationFormat: GPUTextureFormat;
+  private vertexBuffer: GPUBuffer;
+  private renderPipeline: GPURenderPipeline;
 
-  constructor() { }
+  public constructor() { }
 
-  async render() {
+  public async render() {
     await this.init();
     this.run();
   }
 
-  async init() {
+  private async init() {
     this.checkWebGPUSupport();
     await this.requestAdapter();
     await this.requestDevice();
     this.getCanvas();
-    this.getContext();
-    this.configContext(this.device, this.presentationFormat, "premultiplied");
-    this.vertexBuffer = this.createBuffer("Vertex Buffer", vertices, GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST);
+    this.configContext();
+    this.createVertexBuffer();
     this.createRenderPipeline();
   }
 
-  checkWebGPUSupport() {
+  private checkWebGPUSupport() {
     if (!navigator.gpu) {
       throw Error("WebGPU not supported.");
     }
   }
 
-  async requestAdapter() {
+  private async requestAdapter() {
     this.adapter = await navigator.gpu.requestAdapter();
     if (!this.adapter) {
       throw Error("Failed to request WebGPU adapter.");
     }
   }
 
-  async requestDevice() {
+  private async requestDevice() {
     this.device = await this.adapter.requestDevice();
     if (!this.device) {
       throw Error("Failed to request WebGPU device.");
     }
   }
 
-  getCanvas() {
+  private getCanvas() {
     this.canvas = document.querySelector('canvas');
     if (!this.canvas) {
       throw Error("Failed to find canvas element.");
     }
   }
 
-  getContext() {
+  private configContext() {
     this.context = this.canvas.getContext("webgpu");
     if (!this.context) {
       throw Error("Failed to get WebGPU context from canvas.");
     }
 
     this.presentationFormat = navigator.gpu.getPreferredCanvasFormat();
-  }
 
-  configContext(device: GPUDevice, format: GPUTextureFormat, alphaMode: GPUCanvasAlphaMode) {
     this.context.configure({
-      device,
-      format,
-      alphaMode,
+      device: this.device,
+      format: this.presentationFormat,
+      alphaMode: "premultiplied",
     });
   }
 
-  createBuffer(label: string, data: Float32Array, usage: GPUBufferUsageFlags) {
-    const buffer = this.device.createBuffer({
-      label,
-      size: data.byteLength,
-      usage,
-    });
-    this.device.queue.writeBuffer(buffer, 0, data, 0, data.length);
-
-    return buffer;
+  private createVertexBuffer() {
+    this.vertexBuffer = this.createBuffer("Vertex Buffer", vertices, GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST);
   }
 
-  createRenderPipeline() {
+  private createRenderPipeline() {
     const shaderModule = this.createShaderModule("Triangle Shader Module", shaderCode);
 
     const attributes: GPUVertexAttribute[] = [
@@ -153,7 +143,18 @@ export default class Renderer {
     this.renderPipeline = this.device.createRenderPipeline(pipelineDescriptor);
   }
 
-  createShaderModule(label: string, code: string) {
+  private createBuffer(label: string, data: Float32Array, usage: GPUBufferUsageFlags) {
+    const buffer = this.device.createBuffer({
+      label,
+      size: data.byteLength,
+      usage,
+    });
+    this.device.queue.writeBuffer(buffer, 0, data, 0, data.length);
+
+    return buffer;
+  }
+
+  private createShaderModule(label: string, code: string) {
     const shaderModule = this.device.createShaderModule({
       label,
       code,
@@ -162,11 +163,11 @@ export default class Renderer {
     return shaderModule;
   }
 
-  run() {
+  private run() {
     requestAnimationFrame(() => this.drawFrame());
   }
 
-  drawFrame() {
+  private drawFrame() {
     const commandEncoder = this.device.createCommandEncoder();
     const textureView = this.context.getCurrentTexture().createView();
     const colorAttachments: GPURenderPassColorAttachment[] = [
