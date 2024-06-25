@@ -3,7 +3,7 @@ import Renderer from "./renderer";
 const renderer = new Renderer();
 
 try {
-  renderer.run()
+  renderer.render()
 } catch (err: any) {
   if (err instanceof Error) {
     console.error(err.message)
