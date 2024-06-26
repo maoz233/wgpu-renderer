@@ -21,6 +21,10 @@ const config: webpack.Configuration = {
         use: 'ts-loader',
         exclude: /node_modules/,
       },
+      {
+        test: /\.wgsl$/,
+        use: 'raw-loader',
+      },
     ]
   },
   resolve: {
