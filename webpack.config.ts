@@ -1,7 +1,8 @@
-import path from 'path';
-import webpack from 'webpack';
+import path from "path";
+import webpack from "webpack";
+import "webpack-dev-server";
 
-const HtmlWebpackPlugin = require('html-webpack-plugin');
+const HtmlWebpackPlugin = require("html-webpack-plugin");
 
 const config: webpack.Configuration = {
   mode: "development",
@@ -29,6 +30,9 @@ const config: webpack.Configuration = {
     path: path.resolve(__dirname, "dist"),
     filename: "index.bundle.js",
     clean: true,
+  },
+  devServer: {
+    open: true,
   },
 };
 
