@@ -9,7 +9,15 @@
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "types": ["node", "@webgpu/types"],
+    "types": [
+      "node",
+      "@webgpu/types"
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*",
+      ]
+    },
   },
   "ts-node": {
     "compilerOptions": {

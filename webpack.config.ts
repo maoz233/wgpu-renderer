@@ -7,7 +7,7 @@ const HtmlWebpackPlugin = require("html-webpack-plugin");
 const config: webpack.Configuration = {
   mode: "development",
   entry: "./src/index.ts",
-  devtool: 'inline-source-map',
+  devtool: "inline-source-map",
   plugins: [
     new HtmlWebpackPlugin({
       title: "Custom Template",
@@ -18,17 +18,20 @@ const config: webpack.Configuration = {
     rules: [
       {
         test: /\.tsx?$/,
-        use: 'ts-loader',
+        use: "ts-loader",
         exclude: /node_modules/,
       },
       {
         test: /\.wgsl$/,
-        use: 'raw-loader',
+        use: "raw-loader",
       },
     ]
   },
   resolve: {
-    extensions: ['.ts', '.js'],
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
+    extensions: [".ts", ".js"],
   },
   output: {
     path: path.resolve(__dirname, "dist"),
@@ -36,7 +39,7 @@ const config: webpack.Configuration = {
     clean: true,
   },
   devServer: {
-    open: true,
+    // open: true,
   },
 };
 
