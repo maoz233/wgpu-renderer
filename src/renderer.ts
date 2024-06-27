@@ -11,7 +11,9 @@ export default class Renderer {
   private vertexBuffer: GPUBuffer;
   private renderPipeline: GPURenderPipeline;
 
-  public constructor() { }
+  public constructor() {
+    this.drawFrame = this.drawFrame.bind(this);
+  }
 
   public async render() {
     await this.init();
@@ -143,12 +145,12 @@ export default class Renderer {
   }
 
   private run() {
-    requestAnimationFrame(() => this.drawFrame());
+    requestAnimationFrame(this.drawFrame);
   }
 
   private drawFrame() {
     const commandEncoder = this.device.createCommandEncoder();
-    const textureView = this.context.getCurrentTexture().createView();
+    const textureView = this.context.getCurrentTexture().createView({ label: "Render Target Texture View" });
     const colorAttachments: GPURenderPassColorAttachment[] = [
       {
         view: textureView,
@@ -170,6 +172,6 @@ export default class Renderer {
 
     this.device.queue.submit([commandEncoder.finish()]);
 
-    requestAnimationFrame(() => this.drawFrame());
+    requestAnimationFrame(this.drawFrame);
   }
 }
