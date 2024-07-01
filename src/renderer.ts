@@ -51,6 +51,12 @@ export default class Renderer {
     if (!this.device) {
       throw Error("Failed to request WebGPU device.");
     }
+
+    this.device.lost.then((info) => {
+      if (info.reason !== "destroyed") {
+        throw new Error(`WebGPU device was lost: ${info.message}`);
+      }
+    });
   }
 
   private getCanvas() {
@@ -59,13 +65,19 @@ export default class Renderer {
       throw Error("Failed to find canvas element.");
     }
 
-    const observer = new ResizeObserver(entries => {
+    const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const canvas = entry.target as HTMLCanvasElement;
         const width = entry.contentBoxSize[0].inlineSize;
         const height = entry.contentBoxSize[0].blockSize;
-        canvas.width = Math.max(1, Math.min(width, this.device.limits.maxTextureDimension2D));
-        canvas.height = Math.max(1, Math.min(height, this.device.limits.maxTextureDimension2D));
+        canvas.width = Math.max(
+          1,
+          Math.min(width, this.device.limits.maxTextureDimension2D)
+        );
+        canvas.height = Math.max(
+          1,
+          Math.min(height, this.device.limits.maxTextureDimension2D)
+        );
       }
     });
     observer.observe(this.canvas);
