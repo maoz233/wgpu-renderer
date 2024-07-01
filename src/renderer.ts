@@ -40,14 +40,14 @@ export default class Renderer {
   }
 
   private async requestAdapter() {
-    this.adapter = await navigator.gpu.requestAdapter();
+    this.adapter = await navigator.gpu?.requestAdapter();
     if (!this.adapter) {
       throw Error("Failed to request WebGPU adapter.");
     }
   }
 
   private async requestDevice() {
-    this.device = await this.adapter.requestDevice();
+    this.device = await this.adapter?.requestDevice();
     if (!this.device) {
       throw Error("Failed to request WebGPU device.");
     }
@@ -111,6 +111,7 @@ export default class Renderer {
     ];
 
     const pipelineDescriptor: GPURenderPipelineDescriptor = {
+      label: "Triangle Render Pipeline",
       vertex: {
         module: shaderModule,
         entryPoint: "vertex_main",
@@ -177,6 +178,7 @@ export default class Renderer {
     ];
 
     const renderPassDescriptor: GPURenderPassDescriptor = {
+      label: "Triangle Renderpass",
       colorAttachments,
     };
 
