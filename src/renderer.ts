@@ -1,6 +1,9 @@
 import shaderCode from "@/shaders/triangle.wgsl";
 
-const vertices = new Float32Array([0.0, 0.6, 0, 1, 1, 0, 0, 1, -0.5, -0.6, 0, 1, 0, 1, 0, 1, 0.5, -0.6, 0, 1, 0, 0, 1, 1,]);
+const vertices = new Float32Array([
+  0.0, 0.6, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, -0.5, -0.6, 0.0, 1.0, 0.0, 1.0, 0.0,
+  1.0, 0.5, -0.6, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0,
+]);
 
 export default class Renderer {
   private adapter: GPUAdapter;
@@ -51,7 +54,7 @@ export default class Renderer {
   }
 
   private getCanvas() {
-    this.canvas = document.querySelector('canvas');
+    this.canvas = document.querySelector("canvas");
     if (!this.canvas) {
       throw Error("Failed to find canvas element.");
     }
@@ -73,11 +76,18 @@ export default class Renderer {
   }
 
   private createVertexBuffer() {
-    this.vertexBuffer = this.createBuffer("Vertex Buffer", vertices, GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST);
+    this.vertexBuffer = this.createBuffer(
+      "Vertex Buffer",
+      vertices,
+      GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+    );
   }
 
   private createRenderPipeline() {
-    const shaderModule = this.createShaderModule("Triangle Shader Module", shaderCode);
+    const shaderModule = this.createShaderModule(
+      "Triangle Shader Module",
+      shaderCode
+    );
 
     const attributes: GPUVertexAttribute[] = [
       {
@@ -124,7 +134,11 @@ export default class Renderer {
     this.renderPipeline = this.device.createRenderPipeline(pipelineDescriptor);
   }
 
-  private createBuffer(label: string, data: Float32Array, usage: GPUBufferUsageFlags) {
+  private createBuffer(
+    label: string,
+    data: Float32Array,
+    usage: GPUBufferUsageFlags
+  ) {
     const buffer = this.device.createBuffer({
       label,
       size: data.byteLength,
@@ -139,7 +153,7 @@ export default class Renderer {
     const shaderModule = this.device.createShaderModule({
       label,
       code,
-    })
+    });
 
     return shaderModule;
   }
@@ -150,13 +164,15 @@ export default class Renderer {
 
   private drawFrame() {
     const commandEncoder = this.device.createCommandEncoder();
-    const textureView = this.context.getCurrentTexture().createView({ label: "Render Target Texture View" });
+    const textureView = this.context
+      .getCurrentTexture()
+      .createView({ label: "Render Target Texture View" });
     const colorAttachments: GPURenderPassColorAttachment[] = [
       {
         view: textureView,
-        clearValue: [0, 0, 0, 1],
-        loadOp: 'clear',
-        storeOp: 'store',
+        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+        loadOp: "clear",
+        storeOp: "store",
       },
     ];
 
