@@ -3,6 +3,7 @@ import webpack from "webpack";
 import "webpack-dev-server";
 
 const HtmlWebpackPlugin = require("html-webpack-plugin");
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 const config: webpack.Configuration = {
   mode: "development",
@@ -12,7 +13,12 @@ const config: webpack.Configuration = {
     new HtmlWebpackPlugin({
       title: "Custom Template",
       template: "./src/index.html",
-    })
+    }),
+    new CopyWebpackPlugin({
+      patterns: [
+        { from: "src/style.css", to: "style.css" }
+      ],
+    }),
   ],
   module: {
     rules: [
@@ -25,7 +31,7 @@ const config: webpack.Configuration = {
         test: /\.wgsl$/,
         use: "raw-loader",
       },
-    ]
+    ],
   },
   resolve: {
     alias: {
