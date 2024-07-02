@@ -1,5 +1,6 @@
 import shaderCode from "@/shaders/shader.wgsl";
 import { mat4 } from "wgpu-matrix";
+import { GUI, GUIController } from "dat.gui";
 
 const vertices = new Float32Array([
   0.0, 0.6, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, -0.5, -0.6, 0.0, 1.0, 0.0, 1.0, 0.0,
@@ -16,8 +17,11 @@ export default class Renderer {
   private uniformBuffer: GPUBuffer;
   private bindGroup: GPUBindGroup;
   private renderPipeline: GPURenderPipeline;
+  private current: number;
+  private profilerController: GUIController;
 
   public constructor() {
+    this.current = Date.now();
     this.drawFrame = this.drawFrame.bind(this);
   }
 
@@ -35,6 +39,7 @@ export default class Renderer {
     this.createRenderPipeline();
     this.createVertexBuffer();
     this.createUniformBuffer();
+    this.initGUI();
   }
 
   private checkWebGPUSupport() {
@@ -214,15 +219,28 @@ export default class Renderer {
     return shaderModule;
   }
 
+  private initGUI() {
+    const profiler = { fps: "0" };
+    const gui = new GUI({
+      name: "My GUI",
+      autoPlace: true,
+      hideable: true,
+    });
+    this.profilerController = gui.add(profiler, "fps").name("FPS");
+  }
+
   private run() {
     requestAnimationFrame(this.drawFrame);
   }
 
   private drawFrame() {
+    const now = Date.now();
+    this.profilerController.setValue((1000 / (now - this.current)).toFixed(2));
+    this.current = now;
+
     // model-view-projectin matrix
-    const current = Date.now() / 1000;
     const aspect = this.canvas.width / this.canvas.height;
-    const model = mat4.rotateY(mat4.identity(), current % 360);
+    const model = mat4.rotateY(mat4.identity(), (this.current / 1000) % 360);
     const view = mat4.lookAt(
       [0.0, 0.0, -3.0],
       [0.0, 0.0, 0.0],
