@@ -1,4 +1,5 @@
-import shaderCode from "@/shaders/triangle.wgsl";
+import shaderCode from "@/shaders/shader.wgsl";
+import { mat4 } from "wgpu-matrix";
 
 const vertices = new Float32Array([
   0.0, 0.6, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, -0.5, -0.6, 0.0, 1.0, 0.0, 1.0, 0.0,
@@ -12,9 +13,6 @@ export default class Renderer {
   private context: GPUCanvasContext;
   private presentationFormat: GPUTextureFormat;
   private vertexBuffer: GPUBuffer;
-  private uniformValues: Float32Array;
-  private scaleOffset: number;
-  private offsetOffset: number;
   private uniformBuffer: GPUBuffer;
   private bindGroup: GPUBindGroup;
   private renderPipeline: GPURenderPipeline;
@@ -172,16 +170,10 @@ export default class Renderer {
   }
 
   private createUniformBuffer() {
-    const uniformBufferSize = (2 + 2) * Float32Array.BYTES_PER_ELEMENT;
-    this.uniformValues = new Float32Array(
-      uniformBufferSize / Float32Array.BYTES_PER_ELEMENT
-    );
-    this.scaleOffset = 0;
-    this.offsetOffset = 2;
-    this.uniformValues.set([-0.5, -0.25], this.offsetOffset);
+    const uniformBufferSize = 4 * 4 * Float32Array.BYTES_PER_ELEMENT;
 
     this.uniformBuffer = this.createBuffer(
-      "Triangle Uniform Buffer",
+      "Uniform Buffer",
       uniformBufferSize,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
@@ -227,9 +219,24 @@ export default class Renderer {
   }
 
   private drawFrame() {
+    // model-view-projectin matrix
+    const current = Date.now() / 1000;
     const aspect = this.canvas.width / this.canvas.height;
-    this.uniformValues.set([0.5 / aspect, 0.5], this.scaleOffset);
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformValues);
+    const model = mat4.rotateY(mat4.identity(), current % 360);
+    const view = mat4.lookAt(
+      [0.0, 0.0, -3.0],
+      [0.0, 0.0, 0.0],
+      [0.0, 1.0, 0.0]
+    );
+    const projection = mat4.perspective((2 * Math.PI) / 5, aspect, 1.0, 100.0);
+    const transform = mat4.multiply(projection, mat4.multiply(view, model));
+    this.device.queue.writeBuffer(
+      this.uniformBuffer,
+      0,
+      transform.buffer,
+      transform.byteOffset,
+      transform.byteLength
+    );
 
     const commandEncoder = this.device.createCommandEncoder();
     const textureView = this.context
