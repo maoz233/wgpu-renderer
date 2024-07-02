@@ -12,6 +12,11 @@ export default class Renderer {
   private context: GPUCanvasContext;
   private presentationFormat: GPUTextureFormat;
   private vertexBuffer: GPUBuffer;
+  private uniformValues: Float32Array;
+  private scaleOffset: number;
+  private offsetOffset: number;
+  private uniformBuffer: GPUBuffer;
+  private bindGroup: GPUBindGroup;
   private renderPipeline: GPURenderPipeline;
 
   public constructor() {
@@ -29,8 +34,9 @@ export default class Renderer {
     await this.requestDevice();
     this.getCanvas();
     this.configContext();
-    this.createVertexBuffer();
     this.createRenderPipeline();
+    this.createVertexBuffer();
+    this.createUniformBuffer();
   }
 
   private checkWebGPUSupport() {
@@ -98,14 +104,6 @@ export default class Renderer {
     });
   }
 
-  private createVertexBuffer() {
-    this.vertexBuffer = this.createBuffer(
-      "Vertex Buffer",
-      vertices,
-      GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
-    );
-  }
-
   private createRenderPipeline() {
     const shaderModule = this.createShaderModule(
       "Triangle Shader Module",
@@ -158,17 +156,59 @@ export default class Renderer {
     this.renderPipeline = this.device.createRenderPipeline(pipelineDescriptor);
   }
 
+  private createVertexBuffer() {
+    this.vertexBuffer = this.createBuffer(
+      "Vertex Buffer",
+      vertices.byteLength,
+      GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+    );
+    this.device.queue.writeBuffer(
+      this.vertexBuffer,
+      0,
+      vertices,
+      0,
+      vertices.length
+    );
+  }
+
+  private createUniformBuffer() {
+    const uniformBufferSize = (2 + 2) * Float32Array.BYTES_PER_ELEMENT;
+    this.uniformValues = new Float32Array(
+      uniformBufferSize / Float32Array.BYTES_PER_ELEMENT
+    );
+    this.scaleOffset = 0;
+    this.offsetOffset = 2;
+    this.uniformValues.set([-0.5, -0.25], this.offsetOffset);
+
+    this.uniformBuffer = this.createBuffer(
+      "Triangle Uniform Buffer",
+      uniformBufferSize,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    );
+
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.renderPipeline.getBindGroupLayout(0),
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.uniformBuffer,
+          },
+        },
+      ],
+    });
+  }
+
   private createBuffer(
     label: string,
-    data: Float32Array,
+    size: number,
     usage: GPUBufferUsageFlags
   ) {
     const buffer = this.device.createBuffer({
       label,
-      size: data.byteLength,
+      size,
       usage,
     });
-    this.device.queue.writeBuffer(buffer, 0, data, 0, data.length);
 
     return buffer;
   }
@@ -187,6 +227,10 @@ export default class Renderer {
   }
 
   private drawFrame() {
+    const aspect = this.canvas.width / this.canvas.height;
+    this.uniformValues.set([0.5 / aspect, 0.5], this.scaleOffset);
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformValues);
+
     const commandEncoder = this.device.createCommandEncoder();
     const textureView = this.context
       .getCurrentTexture()
@@ -208,6 +252,7 @@ export default class Renderer {
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setPipeline(this.renderPipeline);
     passEncoder.setVertexBuffer(0, this.vertexBuffer);
+    passEncoder.setBindGroup(0, this.bindGroup);
     passEncoder.draw(3);
     passEncoder.end();
 
