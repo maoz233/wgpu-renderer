@@ -1,11 +1,19 @@
 import shaderCode from "@/shaders/shader.wgsl";
 import { mat4 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
+import { rand } from "@/utils";
 
 const vertices = new Float32Array([
   0.0, 0.6, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, -0.5, -0.6, 0.0, 1.0, 0.0, 1.0, 0.0,
   1.0, 0.5, -0.6, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0,
 ]);
+
+type Transform = {
+  buffer: GPUBuffer;
+  offset: number[];
+  scale: number;
+  bindGroup: GPUBindGroup;
+};
 
 export default class Renderer {
   private adapter: GPUAdapter;
@@ -14,8 +22,7 @@ export default class Renderer {
   private context: GPUCanvasContext;
   private presentationFormat: GPUTextureFormat;
   private vertexBuffer: GPUBuffer;
-  private uniformBuffer: GPUBuffer;
-  private bindGroup: GPUBindGroup;
+  private uniforms: Transform[];
   private renderPipeline: GPURenderPipeline;
   private current: number;
   private profilerController: GUIController;
@@ -175,25 +182,46 @@ export default class Renderer {
   }
 
   private createUniformBuffer() {
-    const uniformBufferSize = 4 * 4 * Float32Array.BYTES_PER_ELEMENT;
+    this.uniforms = [];
 
-    this.uniformBuffer = this.createBuffer(
-      "Uniform Buffer",
-      uniformBufferSize,
-      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-    );
+    const transformBufferSize = 4 * 4 * Float32Array.BYTES_PER_ELEMENT;
 
-    this.bindGroup = this.device.createBindGroup({
-      layout: this.renderPipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: this.uniformBuffer,
+    for (let i = 0; i < 100; ++i) {
+      const transformBuffer = this.createBuffer(
+        `Transform Uniform Buffer ${i}`,
+        transformBufferSize,
+        GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+      );
+
+      const bindGroup = this.device.createBindGroup({
+        label: `Transform Uniform Bind Group ${i}`,
+        layout: this.renderPipeline.getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: {
+              buffer: transformBuffer,
+            },
           },
-        },
-      ],
+        ],
+      });
+
+      this.uniforms.push({
+        buffer: transformBuffer,
+        offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
+        scale: rand(0.2, 0.5),
+        bindGroup,
+      });
+    }
+  }
+
+  private createShaderModule(label: string, code: string) {
+    const shaderModule = this.device.createShaderModule({
+      label,
+      code,
     });
+
+    return shaderModule;
   }
 
   private createBuffer(
@@ -208,15 +236,6 @@ export default class Renderer {
     });
 
     return buffer;
-  }
-
-  private createShaderModule(label: string, code: string) {
-    const shaderModule = this.device.createShaderModule({
-      label,
-      code,
-    });
-
-    return shaderModule;
   }
 
   private initGUI() {
@@ -240,21 +259,12 @@ export default class Renderer {
 
     // model-view-projectin matrix
     const aspect = this.canvas.width / this.canvas.height;
-    const model = mat4.rotateY(mat4.identity(), (this.current / 1000) % 360);
     const view = mat4.lookAt(
       [0.0, 0.0, -3.0],
       [0.0, 0.0, 0.0],
       [0.0, 1.0, 0.0]
     );
-    const projection = mat4.perspective((2 * Math.PI) / 5, aspect, 1.0, 100.0);
-    const transform = mat4.multiply(projection, mat4.multiply(view, model));
-    this.device.queue.writeBuffer(
-      this.uniformBuffer,
-      0,
-      transform.buffer,
-      transform.byteOffset,
-      transform.byteLength
-    );
+    const projection = mat4.perspective((2 * Math.PI) / 12, aspect, 1.0, 100.0);
 
     const commandEncoder = this.device.createCommandEncoder();
     const textureView = this.context
@@ -277,8 +287,37 @@ export default class Renderer {
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setPipeline(this.renderPipeline);
     passEncoder.setVertexBuffer(0, this.vertexBuffer);
-    passEncoder.setBindGroup(0, this.bindGroup);
-    passEncoder.draw(3);
+
+    for (const { buffer, offset, scale, bindGroup } of this.uniforms) {
+      const scaleMat = mat4.scale(mat4.identity(), [
+        scale / aspect,
+        scale,
+        1.0,
+        1.0,
+      ]);
+      const translateMat = mat4.translate(mat4.identity(), [
+        ...offset,
+        1.0,
+        1.0,
+      ]);
+      const rotateMat = mat4.rotateY(
+        mat4.identity(),
+        (this.current / 1000) % 360
+      );
+      const model = mat4.mul(scaleMat, mat4.mul(translateMat, rotateMat));
+      const transform = mat4.multiply(projection, mat4.multiply(view, model));
+      this.device.queue.writeBuffer(
+        buffer,
+        0,
+        transform.buffer,
+        transform.byteOffset,
+        transform.byteLength
+      );
+
+      passEncoder.setBindGroup(0, bindGroup);
+      passEncoder.draw(3);
+    }
+
     passEncoder.end();
 
     this.device.queue.submit([commandEncoder.finish()]);
