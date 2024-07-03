@@ -17,6 +17,9 @@ export default class Renderer {
   private renderPipeline: GPURenderPipeline;
   private vertexBuffer: GPUBuffer;
   private indexBuffer: GPUBuffer;
+  private texture: GPUTexture;
+  private textureView: GPUTextureView;
+  private sampler: GPUSampler;
   private transforms: Array<Transform>;
   private uniformBuffers: Array<GPUBuffer>;
   private bindGroups: Array<GPUBindGroup>;
@@ -42,6 +45,7 @@ export default class Renderer {
     this.createRenderPipeline();
     this.createVertexBuffer();
     this.createIndexBuffer();
+    this.createTexture();
     this.createUniformBuffer();
     this.initGUI();
   }
@@ -122,9 +126,7 @@ export default class Renderer {
         entryPoint: "vs_main",
         buffers: [
           {
-            arrayStride:
-              4 *
-              (Float32Array.BYTES_PER_ELEMENT + Uint8Array.BYTES_PER_ELEMENT),
+            arrayStride: (4 + 2) * Float32Array.BYTES_PER_ELEMENT,
             stepMode: "vertex" as GPUVertexStepMode,
             attributes: [
               {
@@ -133,7 +135,7 @@ export default class Renderer {
                 shaderLocation: 0,
               },
               {
-                format: "unorm8x4" as GPUVertexFormat,
+                format: "float32x2" as GPUVertexFormat,
                 offset: 4 * Float32Array.BYTES_PER_ELEMENT,
                 shaderLocation: 1,
               },
@@ -159,56 +161,51 @@ export default class Renderer {
   private createVertexBuffer() {
     const vertexCount = 4;
     const vertexComponents = 4;
-    const colorComponents = 4;
+    const texCoordComponents = 2;
     const unitSize =
-      vertexComponents * Float32Array.BYTES_PER_ELEMENT +
-      colorComponents * Uint8Array.BYTES_PER_ELEMENT;
+      (vertexComponents + texCoordComponents) * Float32Array.BYTES_PER_ELEMENT;
 
-    const vertexArrayBuffer = new ArrayBuffer(vertexCount * unitSize);
-    let vertexOffset = 0;
-    let vertexData = new Float32Array(vertexArrayBuffer);
-    let colorOffset = vertexComponents * Float32Array.BYTES_PER_ELEMENT;
-    let colorData = new Uint8Array(vertexArrayBuffer);
-
-    const vertices = [
+    const data = [
       {
-        vertices: [-0.5, 0.5, 0.0, 1.0],
-        color: [255, 0, 0, 255],
+        vertex: [-0.5, 0.5, 0.0, 1.0],
+        texCoord: [0, 0],
       },
       {
-        vertices: [-0.5, -0.5, 0.0, 1.0],
-        color: [0, 255, 0, 255],
+        vertex: [-0.5, -0.5, 0.0, 1.0],
+        texCoord: [0, 1],
       },
       {
-        vertices: [0.5, 0.5, 0.0, 1.0],
-        color: [0, 0, 255, 255],
+        vertex: [0.5, 0.5, 0.0, 1.0],
+        texCoord: [1, 0],
       },
       {
-        vertices: [0.5, -0.5, 0.0, 1.0],
-        color: [255, 0, 0, 255],
+        vertex: [0.5, -0.5, 0.0, 1.0],
+        texCoord: [1, 1],
       },
     ];
 
+    let vertexOffset = 0;
+    let texCoordOffset = vertexComponents;
+    const vertices = new Float32Array(vertexCount * unitSize);
     for (let i = 0; i < vertexCount; ++i) {
-      vertexData.set(vertices[i].vertices, vertexOffset);
-      colorData.set(vertices[i].color, colorOffset);
-
-      colorOffset += unitSize / Uint8Array.BYTES_PER_ELEMENT;
-      vertexOffset += unitSize / Float32Array.BYTES_PER_ELEMENT;
+      vertices.set(data[i].vertex, vertexOffset);
+      vertices.set(data[i].texCoord, texCoordOffset);
+      vertexOffset += vertexComponents + texCoordComponents;
+      texCoordOffset += vertexComponents + texCoordComponents;
     }
 
     this.vertexBuffer = this.createBuffer(
       "Vertex Buffer",
-      vertexArrayBuffer.byteLength,
+      vertices.byteLength,
       GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
     );
 
     this.device.queue.writeBuffer(
       this.vertexBuffer,
       0,
-      vertexArrayBuffer,
+      vertices.buffer,
       0,
-      vertexArrayBuffer.byteLength
+      vertices.byteLength
     );
   }
 
@@ -230,25 +227,75 @@ export default class Renderer {
     );
   }
 
+  private createTexture() {
+    const width = 5;
+    const height = 7;
+    const colorComponents = 4;
+    const r = [255, 0, 0, 255];
+    const g = [0, 255, 0, 255];
+    const b = [0, 0, 255, 255];
+
+    // prettier-ignore
+    const textureData = new Uint8Array([
+      b, r, r, r, r,
+      r, g, g, g, r,
+      r, g, r, r, r,
+      r, g, g, r, r,
+      r, g, r, r, r,
+      r, g, r, r, r,
+      r, r, r, r, r,
+    ].flat());
+
+    this.texture = this.device.createTexture({
+      label: "2D Texture",
+      size: [width, height],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+
+    this.device.queue.writeTexture(
+      {
+        texture: this.texture,
+      },
+      textureData,
+      {
+        bytesPerRow: width * colorComponents * Uint8Array.BYTES_PER_ELEMENT,
+      },
+      {
+        width,
+        height,
+      }
+    );
+
+    this.textureView = this.texture.createView({
+      label: "Texture View",
+    });
+
+    this.sampler = this.device.createSampler({
+      label: `Texture Sampler`,
+    });
+  }
+
   private createUniformBuffer() {
     this.transforms = new Array<Transform>();
     this.uniformBuffers = new Array<GPUBuffer>();
     this.bindGroups = new Array<GPUBindGroup>();
-    for (let i = 0; i < 100; ++i) {
+
+    for (let i = 0; i < 10; ++i) {
       this.transforms.push({
         offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
         scale: rand(0.2, 0.5),
       });
 
       const uniformBuffer = this.createBuffer(
-        `Transform Storage Buffer ${i}`,
+        `Uniform Buffer ${i}`,
         4 * 4 * Float32Array.BYTES_PER_ELEMENT,
         GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
       );
       this.uniformBuffers.push(uniformBuffer);
 
       const bindGroup = this.device.createBindGroup({
-        label: `Transform Bind Group`,
+        label: `Bind Group ${i}`,
         layout: this.renderPipeline.getBindGroupLayout(0),
         entries: [
           {
@@ -256,6 +303,14 @@ export default class Renderer {
             resource: {
               buffer: uniformBuffer,
             },
+          },
+          {
+            binding: 1,
+            resource: this.sampler,
+          },
+          {
+            binding: 2,
+            resource: this.textureView,
           },
         ],
       });
@@ -315,12 +370,12 @@ export default class Renderer {
     const projection = mat4.perspective((2 * Math.PI) / 12, aspect, 1.0, 100.0);
 
     const commandEncoder = this.device.createCommandEncoder();
-    const textureView = this.context
+    const renderTargetTextureView = this.context
       .getCurrentTexture()
       .createView({ label: "Render Target Texture View" });
     const colorAttachments: GPURenderPassColorAttachment[] = [
       {
-        view: textureView,
+        view: renderTargetTextureView,
         clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
         loadOp: "clear",
         storeOp: "store",
@@ -365,7 +420,7 @@ export default class Renderer {
       );
 
       passEncoder.setBindGroup(0, this.bindGroups[index]);
-      passEncoder.drawIndexed(6, 1, 0);
+      passEncoder.drawIndexed(6);
     });
 
     passEncoder.end();
