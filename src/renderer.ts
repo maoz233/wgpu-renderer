@@ -3,11 +3,6 @@ import { mat4 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import { rand } from "@/utils";
 
-const vertices = new Float32Array([
-  0.0, 0.6, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, -0.5, -0.6, 0.0, 1.0, 0.0, 1.0, 0.0,
-  1.0, 0.5, -0.6, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0,
-]);
-
 type Transform = {
   offset: number[];
   scale: number;
@@ -116,69 +111,99 @@ export default class Renderer {
   }
 
   private createRenderPipeline() {
-    const shaderModule = this.createShaderModule(
-      "Triangle Shader Module",
-      shaderCode
-    );
+    const shaderModule = this.createShaderModule("Shader Module", shaderCode);
 
-    const attributes: GPUVertexAttribute[] = [
-      {
-        shaderLocation: 0,
-        offset: 0,
-        format: "float32x4",
-      },
-      {
-        shaderLocation: 1,
-        offset: 16,
-        format: "float32x4",
-      },
-    ];
-
-    const vertexBuffers: GPUVertexBufferLayout[] = [
-      {
-        attributes,
-        arrayStride: 32,
-        stepMode: "vertex",
-      },
-    ];
-
-    const pipelineDescriptor: GPURenderPipelineDescriptor = {
-      label: "Triangle Render Pipeline",
+    this.renderPipeline = this.device.createRenderPipeline({
+      label: "Render Pipeline",
+      layout: "auto",
       vertex: {
         module: shaderModule,
-        entryPoint: "vertex_main",
-        buffers: vertexBuffers,
-      },
-      fragment: {
-        module: shaderModule,
-        entryPoint: "fragment_main",
-        targets: [
+        entryPoint: "vs_main",
+        buffers: [
           {
-            format: this.presentationFormat,
+            arrayStride:
+              4 *
+              (Float32Array.BYTES_PER_ELEMENT + Uint8Array.BYTES_PER_ELEMENT),
+            stepMode: "vertex" as GPUVertexStepMode,
+            attributes: [
+              {
+                format: "float32x4" as GPUVertexFormat,
+                offset: 0,
+                shaderLocation: 0,
+              },
+              {
+                format: "unorm8x4" as GPUVertexFormat,
+                offset: 4 * Float32Array.BYTES_PER_ELEMENT,
+                shaderLocation: 1,
+              },
+            ],
           },
         ],
       },
       primitive: {
         topology: "triangle-list",
       },
-      layout: "auto",
-    };
-
-    this.renderPipeline = this.device.createRenderPipeline(pipelineDescriptor);
+      fragment: {
+        module: shaderModule,
+        entryPoint: "fs_main",
+        targets: [
+          {
+            format: this.presentationFormat,
+          },
+        ],
+      },
+    });
   }
 
   private createVertexBuffer() {
+    const vertexCount = 3;
+    const vertexComponents = 4;
+    const colorComponents = 4;
+    const unitSize =
+      vertexComponents * Float32Array.BYTES_PER_ELEMENT +
+      colorComponents * Uint8Array.BYTES_PER_ELEMENT;
+
+    const vertexArrayBuffer = new ArrayBuffer(vertexCount * unitSize);
+    let vertexOffset = 0;
+    let vertexData = new Float32Array(vertexArrayBuffer);
+    let colorOffset = vertexComponents * Float32Array.BYTES_PER_ELEMENT;
+    let colorData = new Uint8Array(vertexArrayBuffer);
+
+    const data = [
+      {
+        vertices: [0.0, 0.5, 0.0, 1.0],
+        color: [255, 0, 0, 255],
+      },
+      {
+        vertices: [-0.5, -0.5, 0.0, 1.0],
+        color: [0, 255, 0, 255],
+      },
+      {
+        vertices: [0.5, -0.5, 0.0, 1.0],
+        color: [0, 0, 255, 255],
+      },
+    ];
+
+    for (let i = 0; i < vertexCount; ++i) {
+      vertexData.set(data[i].vertices, vertexOffset);
+      colorData.set(data[i].color, colorOffset);
+
+      colorOffset += unitSize / Uint8Array.BYTES_PER_ELEMENT;
+      vertexOffset += unitSize / Float32Array.BYTES_PER_ELEMENT;
+    }
+
     this.vertexBuffer = this.createBuffer(
       "Vertex Buffer",
-      vertices.byteLength,
+      vertexArrayBuffer.byteLength,
       GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
     );
+
     this.device.queue.writeBuffer(
       this.vertexBuffer,
       0,
-      vertices,
+      vertexArrayBuffer,
       0,
-      vertices.length
+      vertexArrayBuffer.byteLength
     );
   }
 
@@ -282,7 +307,7 @@ export default class Renderer {
     ];
 
     const renderPassDescriptor: GPURenderPassDescriptor = {
-      label: "Triangle Renderpass",
+      label: "Renderpass Descriptor",
       colorAttachments,
     };
 
