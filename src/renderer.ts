@@ -17,9 +17,8 @@ export default class Renderer {
   private renderPipeline: GPURenderPipeline;
   private vertexBuffer: GPUBuffer;
   private transforms: Array<Transform>;
-  private storageValues: Float32Array;
-  private storageBuffer: GPUBuffer;
-  private bindGroup: GPUBindGroup;
+  private uniformBuffers: Array<GPUBuffer>;
+  private bindGroups: Array<GPUBindGroup>;
   private current: number;
   private profilerController: GUIController;
 
@@ -41,7 +40,7 @@ export default class Renderer {
     this.configContext();
     this.createRenderPipeline();
     this.createVertexBuffer();
-    this.createStorageBuffer();
+    this.createUniformBuffer();
     this.initGUI();
   }
 
@@ -207,38 +206,36 @@ export default class Renderer {
     );
   }
 
-  private createStorageBuffer() {
-    const storageBufferSize = 4 * 4 * Float32Array.BYTES_PER_ELEMENT * 100;
-
-    this.storageValues = new Float32Array(
-      storageBufferSize / Float32Array.BYTES_PER_ELEMENT
-    );
-
-    this.storageBuffer = this.createBuffer(
-      `Transform Storage Buffer`,
-      storageBufferSize,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-    );
-
-    this.bindGroup = this.device.createBindGroup({
-      label: `Transform Bind Group`,
-      layout: this.renderPipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: this.storageBuffer,
-          },
-        },
-      ],
-    });
-
+  private createUniformBuffer() {
     this.transforms = new Array<Transform>();
+    this.uniformBuffers = new Array<GPUBuffer>();
+    this.bindGroups = new Array<GPUBindGroup>();
     for (let i = 0; i < 100; ++i) {
       this.transforms.push({
         offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
         scale: rand(0.2, 0.5),
       });
+
+      const uniformBuffer = this.createBuffer(
+        `Transform Storage Buffer ${i}`,
+        4 * 4 * Float32Array.BYTES_PER_ELEMENT,
+        GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+      );
+      this.uniformBuffers.push(uniformBuffer);
+
+      const bindGroup = this.device.createBindGroup({
+        label: `Transform Bind Group`,
+        layout: this.renderPipeline.getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: {
+              buffer: uniformBuffer,
+            },
+          },
+        ],
+      });
+      this.bindGroups.push(bindGroup);
     }
   }
 
@@ -316,8 +313,6 @@ export default class Renderer {
     passEncoder.setVertexBuffer(0, this.vertexBuffer);
 
     this.transforms.forEach(({ offset, scale }: Transform, index: number) => {
-      const arrayOffset = index * (4 * 4);
-
       const scaleMat = mat4.scale(mat4.identity(), [
         scale / aspect,
         scale,
@@ -336,11 +331,17 @@ export default class Renderer {
 
       const model = mat4.mul(scaleMat, mat4.mul(translateMat, rotateMat));
       const transform = mat4.multiply(projection, mat4.multiply(view, model));
-      this.storageValues.set(transform, arrayOffset);
+      this.device.queue.writeBuffer(
+        this.uniformBuffers[index],
+        0,
+        transform.buffer,
+        transform.byteOffset,
+        transform.byteLength
+      );
+
+      passEncoder.setBindGroup(0, this.bindGroups[index]);
+      passEncoder.draw(3);
     });
-    this.device.queue.writeBuffer(this.storageBuffer, 0, this.storageValues);
-    passEncoder.setBindGroup(0, this.bindGroup);
-    passEncoder.draw(3, 100);
 
     passEncoder.end();
 
