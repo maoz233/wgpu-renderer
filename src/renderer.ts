@@ -16,6 +16,7 @@ export default class Renderer {
   private presentationFormat: GPUTextureFormat;
   private renderPipeline: GPURenderPipeline;
   private vertexBuffer: GPUBuffer;
+  private indexBuffer: GPUBuffer;
   private transforms: Array<Transform>;
   private uniformBuffers: Array<GPUBuffer>;
   private bindGroups: Array<GPUBindGroup>;
@@ -40,6 +41,7 @@ export default class Renderer {
     this.configContext();
     this.createRenderPipeline();
     this.createVertexBuffer();
+    this.createIndexBuffer();
     this.createUniformBuffer();
     this.initGUI();
   }
@@ -155,7 +157,7 @@ export default class Renderer {
   }
 
   private createVertexBuffer() {
-    const vertexCount = 3;
+    const vertexCount = 4;
     const vertexComponents = 4;
     const colorComponents = 4;
     const unitSize =
@@ -168,9 +170,9 @@ export default class Renderer {
     let colorOffset = vertexComponents * Float32Array.BYTES_PER_ELEMENT;
     let colorData = new Uint8Array(vertexArrayBuffer);
 
-    const data = [
+    const vertices = [
       {
-        vertices: [0.0, 0.5, 0.0, 1.0],
+        vertices: [-0.5, 0.5, 0.0, 1.0],
         color: [255, 0, 0, 255],
       },
       {
@@ -178,14 +180,18 @@ export default class Renderer {
         color: [0, 255, 0, 255],
       },
       {
-        vertices: [0.5, -0.5, 0.0, 1.0],
+        vertices: [0.5, 0.5, 0.0, 1.0],
         color: [0, 0, 255, 255],
+      },
+      {
+        vertices: [0.5, -0.5, 0.0, 1.0],
+        color: [255, 0, 0, 255],
       },
     ];
 
     for (let i = 0; i < vertexCount; ++i) {
-      vertexData.set(data[i].vertices, vertexOffset);
-      colorData.set(data[i].color, colorOffset);
+      vertexData.set(vertices[i].vertices, vertexOffset);
+      colorData.set(vertices[i].color, colorOffset);
 
       colorOffset += unitSize / Uint8Array.BYTES_PER_ELEMENT;
       vertexOffset += unitSize / Float32Array.BYTES_PER_ELEMENT;
@@ -203,6 +209,24 @@ export default class Renderer {
       vertexArrayBuffer,
       0,
       vertexArrayBuffer.byteLength
+    );
+  }
+
+  private createIndexBuffer() {
+    const indices = new Uint32Array([0, 1, 2, 2, 1, 3]);
+
+    this.indexBuffer = this.createBuffer(
+      "Index Buffer",
+      indices.byteLength,
+      GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
+    );
+
+    this.device.queue.writeBuffer(
+      this.indexBuffer,
+      0,
+      indices.buffer,
+      0,
+      indices.byteLength
     );
   }
 
@@ -311,6 +335,7 @@ export default class Renderer {
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setPipeline(this.renderPipeline);
     passEncoder.setVertexBuffer(0, this.vertexBuffer);
+    passEncoder.setIndexBuffer(this.indexBuffer, "uint32");
 
     this.transforms.forEach(({ offset, scale }: Transform, index: number) => {
       const scaleMat = mat4.scale(mat4.identity(), [
@@ -340,7 +365,7 @@ export default class Renderer {
       );
 
       passEncoder.setBindGroup(0, this.bindGroups[index]);
-      passEncoder.draw(3);
+      passEncoder.drawIndexed(6, 1, 0);
     });
 
     passEncoder.end();
