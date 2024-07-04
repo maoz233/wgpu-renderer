@@ -1,7 +1,7 @@
 import shaderCode from "@/shaders/shader.wgsl";
 import { mat4 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
-import { rand } from "@/utils";
+import { loadImageBitmap, rand } from "@/utils";
 
 type Transform = {
   offset: number[];
@@ -54,7 +54,7 @@ export default class Renderer {
     this.createVertexBuffer();
     this.createIndexBuffer();
     this.createUniformBuffer();
-    this.createTexture();
+    await this.createTexture();
     this.initGUI();
   }
 
@@ -265,43 +265,29 @@ export default class Renderer {
     }
   }
 
-  private createTexture() {
-    const width = 5;
-    const height = 7;
-    const colorComponents = 4;
-    const r = [255, 0, 0, 255];
-    const g = [0, 255, 0, 255];
-    const b = [0, 0, 255, 255];
-
-    // prettier-ignore
-    const textureData = new Uint8Array([
-      b, r, r, r, r,
-      r, g, g, g, r,
-      r, g, r, r, r,
-      r, g, g, r, r,
-      r, g, r, r, r,
-      r, g, r, r, r,
-      r, r, r, r, r,
-    ].flat());
+  private async createTexture() {
+    const imageBitMap = await loadImageBitmap("images/f-texture.png");
 
     this.texture = this.device.createTexture({
       label: "2D Texture",
-      size: [width, height],
+      size: [imageBitMap.width, imageBitMap.height],
       format: "rgba8unorm",
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
-    this.device.queue.writeTexture(
+    this.device.queue.copyExternalImageToTexture(
+      {
+        source: imageBitMap,
+      },
       {
         texture: this.texture,
       },
-      textureData,
       {
-        bytesPerRow: width * colorComponents * Uint8Array.BYTES_PER_ELEMENT,
-      },
-      {
-        width,
-        height,
+        width: imageBitMap.width,
+        height: imageBitMap.height,
       }
     );
 
