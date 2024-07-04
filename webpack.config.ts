@@ -3,21 +3,19 @@ import webpack from "webpack";
 import "webpack-dev-server";
 
 const HtmlWebpackPlugin = require("html-webpack-plugin");
-const CopyWebpackPlugin = require('copy-webpack-plugin');
+const CopyWebpackPlugin = require("copy-webpack-plugin");
 
 const config: webpack.Configuration = {
   mode: "development",
-  entry: "./src/index.ts",
+  entry: path.resolve(__dirname, "src/index.ts"),
   devtool: "inline-source-map",
   plugins: [
     new HtmlWebpackPlugin({
       title: "Custom Template",
-      template: "./src/index.html",
+      template: path.resolve(__dirname, "src/index.html"),
     }),
     new CopyWebpackPlugin({
-      patterns: [
-        { from: "src/style.css", to: "style.css" }
-      ],
+      patterns: [{ from: "src/style.css", to: "style.css" }],
     }),
   ],
   module: {
