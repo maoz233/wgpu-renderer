@@ -17,16 +17,24 @@ export default class Renderer {
   private renderPipeline: GPURenderPipeline;
   private vertexBuffer: GPUBuffer;
   private indexBuffer: GPUBuffer;
-  private texture: GPUTexture;
-  private textureView: GPUTextureView;
-  private sampler: GPUSampler;
+  private bindGroups: Array<Array<GPUBindGroup>>;
   private transforms: Array<Transform>;
   private uniformBuffers: Array<GPUBuffer>;
-  private bindGroups: Array<GPUBindGroup>;
+  private texture: GPUTexture;
   private current: number;
   private profilerController: GUIController;
+  private addressModeUController: GUIController;
+  private addressModeVController: GUIController;
+  private magFilterController: GUIController;
+  private minFilterController: GUIController;
 
   public constructor() {
+    this.transforms = new Array<Transform>();
+    this.uniformBuffers = new Array<GPUBuffer>();
+    this.bindGroups = new Array<Array<GPUBindGroup>>(
+      new Array<GPUBindGroup>(),
+      new Array<GPUBindGroup>()
+    );
     this.current = Date.now();
     this.drawFrame = this.drawFrame.bind(this);
   }
@@ -45,8 +53,8 @@ export default class Renderer {
     this.createRenderPipeline();
     this.createVertexBuffer();
     this.createIndexBuffer();
-    this.createTexture();
     this.createUniformBuffer();
+    this.createTexture();
     this.initGUI();
   }
 
@@ -227,6 +235,36 @@ export default class Renderer {
     );
   }
 
+  private createUniformBuffer() {
+    for (let i = 0; i < 10; ++i) {
+      this.transforms.push({
+        offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
+        scale: rand(0.2, 0.5),
+      });
+
+      const uniformBuffer = this.createBuffer(
+        `Uniform Buffer ${i}`,
+        4 * 4 * Float32Array.BYTES_PER_ELEMENT,
+        GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+      );
+      this.uniformBuffers.push(uniformBuffer);
+
+      const bindGroup = this.device.createBindGroup({
+        label: `Bind Group 0: ${i}`,
+        layout: this.renderPipeline.getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: {
+              buffer: uniformBuffer,
+            },
+          },
+        ],
+      });
+      this.bindGroups[0].push(bindGroup);
+    }
+  }
+
   private createTexture() {
     const width = 5;
     const height = 7;
@@ -267,54 +305,34 @@ export default class Renderer {
       }
     );
 
-    this.textureView = this.texture.createView({
+    const textureView = this.texture.createView({
       label: "Texture View",
     });
 
-    this.sampler = this.device.createSampler({
-      label: `Texture Sampler`,
-    });
-  }
-
-  private createUniformBuffer() {
-    this.transforms = new Array<Transform>();
-    this.uniformBuffers = new Array<GPUBuffer>();
-    this.bindGroups = new Array<GPUBindGroup>();
-
-    for (let i = 0; i < 10; ++i) {
-      this.transforms.push({
-        offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
-        scale: rand(0.2, 0.5),
+    for (let i = 0; i < 16; ++i) {
+      const sampler = this.device.createSampler({
+        label: `Texture Sampler`,
+        addressModeU: i & 1 ? "repeat" : "clamp-to-edge",
+        addressModeV: i & 2 ? "repeat" : "clamp-to-edge",
+        magFilter: i & 4 ? "linear" : "nearest",
+        minFilter: i & 8 ? "linear" : "nearest",
       });
 
-      const uniformBuffer = this.createBuffer(
-        `Uniform Buffer ${i}`,
-        4 * 4 * Float32Array.BYTES_PER_ELEMENT,
-        GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-      );
-      this.uniformBuffers.push(uniformBuffer);
-
       const bindGroup = this.device.createBindGroup({
-        label: `Bind Group ${i}`,
-        layout: this.renderPipeline.getBindGroupLayout(0),
+        label: `Bind Group 1: ${i}`,
+        layout: this.renderPipeline.getBindGroupLayout(1),
         entries: [
           {
             binding: 0,
-            resource: {
-              buffer: uniformBuffer,
-            },
+            resource: sampler,
           },
           {
             binding: 1,
-            resource: this.sampler,
-          },
-          {
-            binding: 2,
-            resource: this.textureView,
+            resource: textureView,
           },
         ],
       });
-      this.bindGroups.push(bindGroup);
+      this.bindGroups[1].push(bindGroup);
     }
   }
 
@@ -343,12 +361,36 @@ export default class Renderer {
 
   private initGUI() {
     const profiler = { fps: "0" };
+    const settings = {
+      addressModeU: "repeat",
+      addressModeV: "repeat",
+      magFilter: "linear",
+      minFilter: "linear",
+    };
     const gui = new GUI({
       name: "My GUI",
       autoPlace: true,
       hideable: true,
     });
     this.profilerController = gui.add(profiler, "fps").name("FPS");
+    const settingsGUI = gui.addFolder("Settings");
+    settingsGUI.closed = false;
+    this.addressModeUController = settingsGUI
+      .add(settings, "addressModeU")
+      .options(["repeat", "clamp-to-edge"])
+      .name("addressModeU");
+    this.addressModeVController = settingsGUI
+      .add(settings, "addressModeV")
+      .options(["repeat", "clamp-to-edge"])
+      .name("addressModeV");
+    this.magFilterController = settingsGUI
+      .add(settings, "magFilter")
+      .options(["linear", "nearest"])
+      .name("magFilter");
+    this.minFilterController = settingsGUI
+      .add(settings, "minFilter")
+      .options(["linear", "nearest"])
+      .name("minFilter");
   }
 
   private run() {
@@ -359,6 +401,17 @@ export default class Renderer {
     const now = Date.now();
     this.profilerController.setValue((1000 / (now - this.current)).toFixed(2));
     this.current = now;
+
+    // sampler index
+    const addressModeU = this.addressModeUController.getValue();
+    const addressModeV = this.addressModeVController.getValue();
+    const magFilter = this.magFilterController.getValue();
+    const minFilter = this.minFilterController.getValue();
+    const samplerIndex =
+      (addressModeU === "repeat" ? 1 : 0) +
+      (addressModeV === "repeat" ? 2 : 0) +
+      (magFilter === "linear" ? 4 : 0) +
+      (minFilter === "linear" ? 8 : 0);
 
     // model-view-projectin matrix
     const aspect = this.canvas.width / this.canvas.height;
@@ -392,36 +445,39 @@ export default class Renderer {
     passEncoder.setVertexBuffer(0, this.vertexBuffer);
     passEncoder.setIndexBuffer(this.indexBuffer, "uint32");
 
-    this.transforms.forEach(({ offset, scale }: Transform, index: number) => {
-      const scaleMat = mat4.scale(mat4.identity(), [
-        scale / aspect,
-        scale,
-        1.0,
-        1.0,
-      ]);
-      const translateMat = mat4.translate(mat4.identity(), [
-        ...offset,
-        1.0,
-        1.0,
-      ]);
-      const rotateMat = mat4.rotateY(
-        mat4.identity(),
-        (this.current / 1000) % 360
-      );
+    this.transforms.forEach(
+      ({ offset, scale }: Transform, transformIndex: number) => {
+        const scaleMat = mat4.scale(mat4.identity(), [
+          scale / aspect,
+          scale,
+          1.0,
+          1.0,
+        ]);
+        const translateMat = mat4.translate(mat4.identity(), [
+          ...offset,
+          1.0,
+          1.0,
+        ]);
+        const rotateMat = mat4.rotateY(
+          mat4.identity(),
+          (this.current / 1000) % 360
+        );
 
-      const model = mat4.mul(scaleMat, mat4.mul(translateMat, rotateMat));
-      const transform = mat4.multiply(projection, mat4.multiply(view, model));
-      this.device.queue.writeBuffer(
-        this.uniformBuffers[index],
-        0,
-        transform.buffer,
-        transform.byteOffset,
-        transform.byteLength
-      );
+        const model = mat4.mul(scaleMat, mat4.mul(translateMat, rotateMat));
+        const transform = mat4.multiply(projection, mat4.multiply(view, model));
+        this.device.queue.writeBuffer(
+          this.uniformBuffers[transformIndex],
+          0,
+          transform.buffer,
+          transform.byteOffset,
+          transform.byteLength
+        );
 
-      passEncoder.setBindGroup(0, this.bindGroups[index]);
-      passEncoder.drawIndexed(6);
-    });
+        passEncoder.setBindGroup(0, this.bindGroups[0][transformIndex]);
+        passEncoder.setBindGroup(1, this.bindGroups[1][samplerIndex]);
+        passEncoder.drawIndexed(6);
+      }
+    );
 
     passEncoder.end();
 
