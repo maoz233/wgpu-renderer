@@ -1,7 +1,8 @@
 import shaderCode from "@/shaders/shader.wgsl";
-import { mat4 } from "wgpu-matrix";
+import mipmapShaderCode from "@/shaders/mipmap.wgsl";
+import { mat4, utils } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
-import { loadImageBitmap, rand } from "@/utils";
+import { loadImageBitmap, rand, calculateMipLevelCount } from "@/utils";
 
 type Transform = {
   offset: number[];
@@ -20,9 +21,9 @@ export default class Renderer {
   private bindGroups: Array<Array<GPUBindGroup>>;
   private transforms: Array<Transform>;
   private uniformBuffers: Array<GPUBuffer>;
-  private texture: GPUTexture;
   private current: number;
   private profilerController: GUIController;
+  private mipmapsController: GUIController;
   private addressModeUController: GUIController;
   private addressModeVController: GUIController;
   private magFilterController: GUIController;
@@ -32,6 +33,7 @@ export default class Renderer {
     this.transforms = new Array<Transform>();
     this.uniformBuffers = new Array<GPUBuffer>();
     this.bindGroups = new Array<Array<GPUBindGroup>>(
+      new Array<GPUBindGroup>(),
       new Array<GPUBindGroup>(),
       new Array<GPUBindGroup>()
     );
@@ -268,32 +270,33 @@ export default class Renderer {
   private async createTexture() {
     const imageBitMap = await loadImageBitmap("images/f-texture.png");
 
-    this.texture = this.device.createTexture({
-      label: "2D Texture",
-      size: [imageBitMap.width, imageBitMap.height],
-      format: "rgba8unorm",
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.RENDER_ATTACHMENT,
-    });
+    for (let i = 0; i < 2; ++i) {
+      const mipLevelCount = i
+        ? calculateMipLevelCount(imageBitMap.width, imageBitMap.height)
+        : 1;
 
-    this.device.queue.copyExternalImageToTexture(
-      {
-        source: imageBitMap,
-      },
-      {
-        texture: this.texture,
-      },
-      {
-        width: imageBitMap.width,
-        height: imageBitMap.height,
-      }
-    );
+      const texture = this.createTextureFromSource(
+        `2D Texture ${i}`,
+        imageBitMap,
+        mipLevelCount
+      );
 
-    const textureView = this.texture.createView({
-      label: "Texture View",
-    });
+      const textureView = texture.createView({
+        label: `Texture View ${i}`,
+      });
+
+      const bindGroup = this.device.createBindGroup({
+        label: `Bind Group 1: ${i}`,
+        layout: this.renderPipeline.getBindGroupLayout(1),
+        entries: [
+          {
+            binding: 0,
+            resource: textureView,
+          },
+        ],
+      });
+      this.bindGroups[1].push(bindGroup);
+    }
 
     for (let i = 0; i < 16; ++i) {
       const sampler = this.device.createSampler({
@@ -305,20 +308,16 @@ export default class Renderer {
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `Bind Group 1: ${i}`,
-        layout: this.renderPipeline.getBindGroupLayout(1),
+        label: `Bind Group 2: ${i}`,
+        layout: this.renderPipeline.getBindGroupLayout(2),
         entries: [
           {
             binding: 0,
             resource: sampler,
           },
-          {
-            binding: 1,
-            resource: textureView,
-          },
         ],
       });
-      this.bindGroups[1].push(bindGroup);
+      this.bindGroups[2].push(bindGroup);
     }
   }
 
@@ -345,9 +344,224 @@ export default class Renderer {
     return buffer;
   }
 
+  private createTextureFromSource(
+    label: string,
+    source: ImageBitmap,
+    mipLevelCount: number
+  ) {
+    const texture = this.device.createTexture({
+      label,
+      format: "rgba8unorm",
+      mipLevelCount,
+      size: [source.width, source.height],
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    this.copySourceToTexture(this.device, source, texture);
+
+    return texture;
+  }
+
+  private copySourceToTexture(
+    device: GPUDevice,
+    source: ImageBitmap,
+    texture: GPUTexture
+  ) {
+    device.queue.copyExternalImageToTexture(
+      { source },
+      { texture },
+      { width: source.width, height: source.height }
+    );
+
+    if (texture.mipLevelCount > 1) {
+      this.generateMipmaps()(device, texture);
+    }
+  }
+
+  private generateMipmaps() {
+    let sampler: GPUSampler;
+    let module: GPUShaderModule;
+    const pipelineByFormat = new Map<GPUTextureFormat, GPURenderPipeline>();
+
+    const context = this;
+
+    return function generateMipmaps(device: GPUDevice, texture: GPUTexture) {
+      if (!module) {
+        module = device.createShaderModule({
+          label: "Mipmap Shader Module",
+          code: mipmapShaderCode,
+        });
+        sampler = device.createSampler({
+          minFilter: "linear",
+        });
+      }
+
+      if (!pipelineByFormat.has(texture.format)) {
+        const pipeline = device.createRenderPipeline({
+          label: "Mipmap Generation Pipeline",
+          layout: "auto",
+          vertex: {
+            module: module,
+            entryPoint: "vs_main",
+            buffers: [
+              {
+                arrayStride: (4 + 2) * Float32Array.BYTES_PER_ELEMENT,
+                stepMode: "vertex" as GPUVertexStepMode,
+                attributes: [
+                  {
+                    format: "float32x4" as GPUVertexFormat,
+                    offset: 0,
+                    shaderLocation: 0,
+                  },
+                  {
+                    format: "float32x2" as GPUVertexFormat,
+                    offset: 4 * Float32Array.BYTES_PER_ELEMENT,
+                    shaderLocation: 1,
+                  },
+                ],
+              },
+            ],
+          },
+          primitive: {
+            topology: "triangle-list",
+          },
+          fragment: {
+            module,
+            entryPoint: "fs_main",
+            targets: [
+              {
+                format: texture.format,
+              },
+            ],
+          },
+        });
+        pipelineByFormat.set(texture.format, pipeline);
+      }
+
+      const pipeline = pipelineByFormat.get(texture.format);
+
+      // vertex buffer
+      const data = [
+        {
+          vertex: [-1.0, 1.0, 0.0, 1.0],
+          texCoord: [0.0, 0.0],
+        },
+        {
+          vertex: [-1.0, -1.0, 0.0, 1.0],
+          texCoord: [0.0, 1.0],
+        },
+        {
+          vertex: [1.0, 1.0, 0.0, 1.0],
+          texCoord: [1.0, 0.0],
+        },
+        {
+          vertex: [1.0, -1.0, 0.0, 1.0],
+          texCoord: [1.0, 1.0],
+        },
+      ];
+
+      let vertexOffset = 0;
+      let texCoordOffset = 4;
+      const vertices = new Float32Array(4 * 6);
+      for (let i = 0; i < 4; ++i) {
+        vertices.set(data[i].vertex, vertexOffset);
+        vertices.set(data[i].texCoord, texCoordOffset);
+        vertexOffset += 6;
+        texCoordOffset += 6;
+      }
+
+      const vertexBuffer = context.createBuffer(
+        "Mipmaps Generation Vertex Buffer",
+        vertices.byteLength,
+        GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+      );
+
+      device.queue.writeBuffer(
+        vertexBuffer,
+        0,
+        vertices.buffer,
+        0,
+        vertices.byteLength
+      );
+
+      // index buffer
+      const indices = new Uint32Array([0, 1, 2, 2, 1, 3]);
+
+      const indexBuffer = context.createBuffer(
+        "Mipmap Generation Index Buffer",
+        indices.byteLength,
+        GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
+      );
+
+      device.queue.writeBuffer(
+        indexBuffer,
+        0,
+        indices.buffer,
+        0,
+        indices.byteLength
+      );
+
+      const encoder = device.createCommandEncoder({
+        label: "Mipmap Generation Command Encoder",
+      });
+
+      let width = texture.width;
+      let height = texture.height;
+      let baseMipLevel = 0;
+      while (width > 1 || height > 1) {
+        width = Math.max(1, width / 2);
+        height = Math.max(1, height / 2);
+
+        const bindGroup = device.createBindGroup({
+          label: "Mipmap Generation Bind Group",
+          layout: pipeline.getBindGroupLayout(0),
+          entries: [
+            {
+              binding: 0,
+              resource: sampler,
+            },
+            {
+              binding: 1,
+              resource: texture.createView({ baseMipLevel, mipLevelCount: 1 }),
+            },
+          ],
+        });
+
+        ++baseMipLevel;
+
+        const colorAttachments: GPURenderPassColorAttachment[] = [
+          {
+            view: texture.createView({ baseMipLevel, mipLevelCount: 1 }),
+            loadOp: "clear",
+            storeOp: "store",
+          },
+        ];
+
+        const passDescriptor: GPURenderPassDescriptor = {
+          label: "Mipmap Generation Render Pass Descriptor",
+          colorAttachments,
+        };
+
+        const pass = encoder.beginRenderPass(passDescriptor);
+        pass.setPipeline(pipeline);
+        pass.setVertexBuffer(0, vertexBuffer);
+        pass.setIndexBuffer(indexBuffer, "uint32");
+        pass.setBindGroup(0, bindGroup);
+        pass.drawIndexed(6);
+        pass.end();
+      }
+
+      device.queue.submit([encoder.finish()]);
+    };
+  }
+
   private initGUI() {
     const profiler = { fps: "0" };
     const settings = {
+      mimaps: false,
       addressModeU: "repeat",
       addressModeV: "repeat",
       magFilter: "linear",
@@ -361,6 +575,9 @@ export default class Renderer {
     this.profilerController = gui.add(profiler, "fps").name("FPS");
     const settingsGUI = gui.addFolder("Settings");
     settingsGUI.closed = false;
+    this.mipmapsController = settingsGUI
+      .add(settings, "mimaps")
+      .name("Mipmaps");
     this.addressModeUController = settingsGUI
       .add(settings, "addressModeU")
       .options(["repeat", "clamp-to-edge"])
@@ -388,6 +605,9 @@ export default class Renderer {
     this.profilerController.setValue((1000 / (now - this.current)).toFixed(2));
     this.current = now;
 
+    // texture index
+    const textureIndex = this.mipmapsController.getValue() ? 1 : 0;
+
     // sampler index
     const addressModeU = this.addressModeUController.getValue();
     const addressModeV = this.addressModeVController.getValue();
@@ -406,9 +626,11 @@ export default class Renderer {
       [0.0, 0.0, 0.0],
       [0.0, 1.0, 0.0]
     );
-    const projection = mat4.perspective((2 * Math.PI) / 12, aspect, 1.0, 100.0);
+    const projection = mat4.perspective(utils.degToRad(30), aspect, 1.0, 100.0);
 
-    const commandEncoder = this.device.createCommandEncoder();
+    const commandEncoder = this.device.createCommandEncoder({
+      label: "Draw Frame Command Encoder",
+    });
     const renderTargetTextureView = this.context
       .getCurrentTexture()
       .createView({ label: "Render Target Texture View" });
@@ -460,7 +682,8 @@ export default class Renderer {
         );
 
         passEncoder.setBindGroup(0, this.bindGroups[0][transformIndex]);
-        passEncoder.setBindGroup(1, this.bindGroups[1][samplerIndex]);
+        passEncoder.setBindGroup(1, this.bindGroups[1][textureIndex]);
+        passEncoder.setBindGroup(2, this.bindGroups[2][samplerIndex]);
         passEncoder.drawIndexed(6);
       }
     );

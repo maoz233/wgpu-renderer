@@ -16,3 +16,9 @@ export async function loadImageBitmap(url: string) {
 
   return await createImageBitmap(blob, { colorSpaceConversion: "none" });
 }
+
+export function calculateMipLevelCount(...sizes: number[]) {
+  const maxSize = Math.max(...sizes);
+
+  return 1 + Math.log2(maxSize) | 0;
+}
