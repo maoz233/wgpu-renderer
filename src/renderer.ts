@@ -12,6 +12,10 @@ type Transform = {
 export default class Renderer {
   private adapter: GPUAdapter;
   private device: GPUDevice;
+  private hasTimestamp: boolean;
+  private querySet: GPUQuerySet;
+  private resolveBuffer: GPUBuffer;
+  private resultBuffer: GPUBuffer;
   private canvas: HTMLCanvasElement;
   private context: GPUCanvasContext;
   private presentationFormat: GPUTextureFormat;
@@ -21,8 +25,13 @@ export default class Renderer {
   private bindGroups: Array<Array<GPUBindGroup>>;
   private transforms: Array<Transform>;
   private uniformBuffers: Array<GPUBuffer>;
+
   private current: number;
-  private profilerController: GUIController;
+
+  private fpsController: GUIController;
+  private cpuTimeController: GUIController;
+  private gpuTimeController: GUIController;
+  private fovYController: GUIController;
   private mipmapsController: GUIController;
   private addressModeUController: GUIController;
   private addressModeVController: GUIController;
@@ -37,7 +46,9 @@ export default class Renderer {
       new Array<GPUBindGroup>(),
       new Array<GPUBindGroup>()
     );
-    this.current = Date.now();
+
+    this.current = 0;
+
     this.drawFrame = this.drawFrame.bind(this);
   }
 
@@ -74,9 +85,39 @@ export default class Renderer {
   }
 
   private async requestDevice() {
-    this.device = await this.adapter?.requestDevice();
+    this.hasTimestamp = this.adapter?.features.has("timestamp-query");
+    const requiredFeatures: GPUFeatureName[] = this.hasTimestamp
+      ? ["timestamp-query"]
+      : [];
+
+    this.device = await this.adapter?.requestDevice({
+      label: `GPU Device ${
+        this.hasTimestamp && "with feature: timestamp-query"
+      }`,
+      requiredFeatures,
+    });
     if (!this.device) {
       throw Error("Failed to request WebGPU device.");
+    }
+
+    if (this.hasTimestamp) {
+      this.querySet = this.device.createQuerySet({
+        label: "GPU Query Set with Type: timestamp",
+        type: "timestamp",
+        count: 2,
+      });
+
+      this.resolveBuffer = this.device.createBuffer({
+        label: "GPU Buffer: Resolve",
+        size: this.querySet.count * 8,
+        usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+      });
+
+      this.resultBuffer = this.device.createBuffer({
+        label: "GPU Buffer: Result",
+        size: this.resolveBuffer.size,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
     }
 
     this.device.lost.then((info) => {
@@ -126,10 +167,13 @@ export default class Renderer {
   }
 
   private createRenderPipeline() {
-    const shaderModule = this.createShaderModule("Shader Module", shaderCode);
+    const shaderModule = this.createShaderModule(
+      "GPU Shader Module",
+      shaderCode
+    );
 
     this.renderPipeline = this.device.createRenderPipeline({
-      label: "Render Pipeline",
+      label: "GPU Render Pipeline",
       layout: "auto",
       vertex: {
         module: shaderModule,
@@ -205,7 +249,7 @@ export default class Renderer {
     }
 
     this.vertexBuffer = this.createBuffer(
-      "Vertex Buffer",
+      "GPU Buffer: Vertex",
       vertices.byteLength,
       GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
     );
@@ -223,7 +267,7 @@ export default class Renderer {
     const indices = new Uint32Array([0, 1, 2, 2, 1, 3]);
 
     this.indexBuffer = this.createBuffer(
-      "Index Buffer",
+      "GPU Buffer: Index",
       indices.byteLength,
       GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
     );
@@ -245,14 +289,14 @@ export default class Renderer {
       });
 
       const uniformBuffer = this.createBuffer(
-        `Uniform Buffer ${i}`,
+        `GPU Uniform Buffer: transform ${i}`,
         4 * 4 * Float32Array.BYTES_PER_ELEMENT,
         GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
       );
       this.uniformBuffers.push(uniformBuffer);
 
       const bindGroup = this.device.createBindGroup({
-        label: `Bind Group 0: ${i}`,
+        label: `GPU Bind Group 0: transform ${i}`,
         layout: this.renderPipeline.getBindGroupLayout(0),
         entries: [
           {
@@ -276,17 +320,17 @@ export default class Renderer {
         : 1;
 
       const texture = this.createTextureFromSource(
-        `2D Texture ${i}`,
+        `GPU Texture: 2D Texture ${i}`,
         imageBitMap,
         mipLevelCount
       );
 
       const textureView = texture.createView({
-        label: `Texture View ${i}`,
+        label: `GPU Texture View ${i}`,
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `Bind Group 1: ${i}`,
+        label: `GPU Bind Group 1: Texture ${i}`,
         layout: this.renderPipeline.getBindGroupLayout(1),
         entries: [
           {
@@ -300,7 +344,7 @@ export default class Renderer {
 
     for (let i = 0; i < 16; ++i) {
       const sampler = this.device.createSampler({
-        label: `Texture Sampler`,
+        label: `GPU Sampler: Sampler ${i}`,
         addressModeU: i & 1 ? "repeat" : "clamp-to-edge",
         addressModeV: i & 2 ? "repeat" : "clamp-to-edge",
         magFilter: i & 4 ? "linear" : "nearest",
@@ -308,7 +352,7 @@ export default class Renderer {
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `Bind Group 2: ${i}`,
+        label: `Bind Group 2: Sampler ${i}`,
         layout: this.renderPipeline.getBindGroupLayout(2),
         entries: [
           {
@@ -417,7 +461,7 @@ export default class Renderer {
     return function generateMipmaps(device: GPUDevice, texture: GPUTexture) {
       if (!module) {
         module = device.createShaderModule({
-          label: "Mipmap Shader Module",
+          label: "GPU Shader Module: Mipmap Generation",
           code: mipmapShaderCode,
         });
         sampler = device.createSampler({
@@ -427,7 +471,7 @@ export default class Renderer {
 
       if (!pipelineByFormat.has(texture.format)) {
         const pipeline = device.createRenderPipeline({
-          label: "Mipmap Generation Pipeline",
+          label: "GPU Render Pipeline: Mipmap Generation ",
           layout: "auto",
           vertex: {
             module: module,
@@ -500,7 +544,7 @@ export default class Renderer {
       }
 
       const vertexBuffer = context.createBuffer(
-        "Mipmaps Generation Vertex Buffer",
+        "GPU Buffer: Mipmaps Generation Vertex",
         vertices.byteLength,
         GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
       );
@@ -517,7 +561,7 @@ export default class Renderer {
       const indices = new Uint32Array([0, 1, 2, 2, 1, 3]);
 
       const indexBuffer = context.createBuffer(
-        "Mipmap Generation Index Buffer",
+        "GPU Buffer: Mipmap Generation Index ",
         indices.byteLength,
         GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
       );
@@ -531,7 +575,7 @@ export default class Renderer {
       );
 
       const encoder = device.createCommandEncoder({
-        label: "Mipmap Generation Command Encoder",
+        label: "GPU Command Encoder: Mipmap Generation",
       });
 
       let width = texture.width;
@@ -542,7 +586,7 @@ export default class Renderer {
         height = Math.max(1, height / 2);
 
         const bindGroup = device.createBindGroup({
-          label: "Mipmap Generation Bind Group",
+          label: "GPU Bind Group: Mipmap Generation",
           layout: pipeline.getBindGroupLayout(0),
           entries: [
             {
@@ -567,7 +611,7 @@ export default class Renderer {
         ];
 
         const passDescriptor: GPURenderPassDescriptor = {
-          label: "Mipmap Generation Render Pass Descriptor",
+          label: "GPU Render Pass Descriptor: Mipmap Generation",
           colorAttachments,
         };
 
@@ -585,39 +629,62 @@ export default class Renderer {
   }
 
   private initGUI() {
-    const profiler = { fps: "0" };
-    const settings = {
+    const gui = new GUI({
+      name: "My GUI",
+      autoPlace: true,
+      hideable: true,
+      width: 300,
+    });
+
+    // profiling GUI
+    const profiler = { fps: "0", cpuTime: "0", gpuTime: "0" };
+
+    const profilerGUI = gui.addFolder("Profiler");
+    profilerGUI.closed = false;
+    this.fpsController = profilerGUI.add(profiler, "fps").name("FPS");
+    this.cpuTimeController = profilerGUI
+      .add(profiler, "cpuTime")
+      .name("CPU Time (ms)");
+    this.gpuTimeController = profilerGUI
+      .add(profiler, "gpuTime")
+      .name("GPU Time (µs)");
+
+    // camera GUI
+    const camera = { fovY: 30 };
+    const cameraGUI = gui.addFolder("Camera");
+    cameraGUI.closed = false;
+    this.fovYController = cameraGUI
+      .add(camera, "fovY", 0, 180, 0.1)
+      .name("FoV (Y)");
+
+    // texture options GUI
+    const textureOptions = {
       mimaps: false,
       addressModeU: "repeat",
       addressModeV: "repeat",
       magFilter: "linear",
       minFilter: "linear",
     };
-    const gui = new GUI({
-      name: "My GUI",
-      autoPlace: true,
-      hideable: true,
-    });
-    this.profilerController = gui.add(profiler, "fps").name("FPS");
-    const settingsGUI = gui.addFolder("Settings");
-    settingsGUI.closed = false;
-    this.mipmapsController = settingsGUI
-      .add(settings, "mimaps")
+
+    const textureOptionsGUI = gui.addFolder("Texture Options");
+    textureOptionsGUI.closed = false;
+    this.mipmapsController = textureOptionsGUI
+      .add(textureOptions, "mimaps")
       .name("Mipmaps");
-    this.addressModeUController = settingsGUI
-      .add(settings, "addressModeU")
+    this.addressModeUController = textureOptionsGUI
+      .add(textureOptions, "addressModeU")
       .options(["repeat", "clamp-to-edge"])
       .name("addressModeU");
-    this.addressModeVController = settingsGUI
-      .add(settings, "addressModeV")
+    this.addressModeVController = textureOptionsGUI
+      .add(textureOptions, "addressModeV")
       .options(["repeat", "clamp-to-edge"])
       .name("addressModeV");
-    this.magFilterController = settingsGUI
-      .add(settings, "magFilter")
+    this.magFilterController = textureOptionsGUI
+      .add(textureOptions, "magFilter")
       .options(["linear", "nearest"])
       .name("magFilter");
-    this.minFilterController = settingsGUI
-      .add(settings, "minFilter")
+    this.minFilterController = textureOptionsGUI
+      .add(textureOptions, "minFilter")
       .options(["linear", "nearest"])
       .name("minFilter");
   }
@@ -626,10 +693,25 @@ export default class Renderer {
     requestAnimationFrame(this.drawFrame);
   }
 
-  private drawFrame() {
-    const now = Date.now();
-    this.profilerController.setValue((1000 / (now - this.current)).toFixed(2));
+  private drawFrame(now: number) {
+    this.fpsController.setValue((1000 / (now - this.current)).toFixed(2));
     this.current = now;
+
+    const startTime = performance.now();
+
+    // model-view-projectin matrix
+    const aspect = this.canvas.width / this.canvas.height;
+    const view = mat4.lookAt(
+      [0.0, 0.0, -3.0],
+      [0.0, 0.0, 0.0],
+      [0.0, 1.0, 0.0]
+    );
+    const projection = mat4.perspective(
+      utils.degToRad(this.fovYController.getValue()),
+      aspect,
+      1.0,
+      100.0
+    );
 
     // texture index
     const textureIndex = this.mipmapsController.getValue() ? 1 : 0;
@@ -645,21 +727,13 @@ export default class Renderer {
       (magFilter === "linear" ? 4 : 0) +
       (minFilter === "linear" ? 8 : 0);
 
-    // model-view-projectin matrix
-    const aspect = this.canvas.width / this.canvas.height;
-    const view = mat4.lookAt(
-      [0.0, 0.0, -3.0],
-      [0.0, 0.0, 0.0],
-      [0.0, 1.0, 0.0]
-    );
-    const projection = mat4.perspective(utils.degToRad(30), aspect, 1.0, 100.0);
-
     const commandEncoder = this.device.createCommandEncoder({
-      label: "Draw Frame Command Encoder",
+      label: "GPU Command Encoder: Draw Frame",
     });
+
     const renderTargetTextureView = this.context
       .getCurrentTexture()
-      .createView({ label: "Render Target Texture View" });
+      .createView({ label: "GPU Texture View: Canvas Texture View" });
     const colorAttachments: GPURenderPassColorAttachment[] = [
       {
         view: renderTargetTextureView,
@@ -669,9 +743,16 @@ export default class Renderer {
       },
     ];
 
-    const renderPassDescriptor: GPURenderPassDescriptor = {
-      label: "Renderpass Descriptor",
+    const renderPassDescriptor = {
+      label: "GPU Renderpass Descriptor: Draw Frame",
       colorAttachments,
+      ...(this.hasTimestamp && {
+        timestampWrites: {
+          querySet: this.querySet,
+          beginningOfPassWriteIndex: 0,
+          endOfPassWriteIndex: 1,
+        },
+      }),
     };
 
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
@@ -716,7 +797,38 @@ export default class Renderer {
 
     passEncoder.end();
 
+    if (this.hasTimestamp) {
+      commandEncoder.resolveQuerySet(
+        this.querySet,
+        0,
+        this.querySet.count,
+        this.resolveBuffer,
+        0
+      );
+
+      if ("unmapped" === this.resultBuffer.mapState) {
+        commandEncoder.copyBufferToBuffer(
+          this.resolveBuffer,
+          0,
+          this.resultBuffer,
+          0,
+          this.resultBuffer.size
+        );
+      }
+    }
+
     this.device.queue.submit([commandEncoder.finish()]);
+
+    this.cpuTimeController.setValue((performance.now() - startTime).toFixed(2));
+
+    if (this.hasTimestamp && "unmapped" === this.resultBuffer.mapState) {
+      this.resultBuffer.mapAsync(GPUMapMode.READ).then(() => {
+        const times = new BigInt64Array(this.resultBuffer.getMappedRange());
+        this.gpuTimeController.setValue(Number(times[1] - times[0]).toFixed(2));
+
+        this.resultBuffer.unmap();
+      });
+    }
 
     requestAnimationFrame(this.drawFrame);
   }
