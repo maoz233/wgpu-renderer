@@ -346,14 +346,27 @@ export default class Renderer {
 
   private createTextureFromSource(
     label: string,
-    source: ImageBitmap,
+    source: GPUImageCopyExternalImageSource,
     mipLevelCount: number
   ) {
+    let width: number;
+    let height: number;
+    if (source instanceof HTMLVideoElement) {
+      width = source.videoWidth;
+      height = source.videoHeight;
+    } else if (source instanceof VideoFrame) {
+      width = source.codedWidth;
+      height = source.codedHeight;
+    } else {
+      width = source.width;
+      height = source.height;
+    }
+
     const texture = this.device.createTexture({
       label,
       format: "rgba8unorm",
       mipLevelCount,
-      size: [source.width, source.height],
+      size: [width, height],
       usage:
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.COPY_DST |
@@ -367,13 +380,26 @@ export default class Renderer {
 
   private copySourceToTexture(
     device: GPUDevice,
-    source: ImageBitmap,
+    source: GPUImageCopyExternalImageSource,
     texture: GPUTexture
   ) {
+    let width: number;
+    let height: number;
+    if (source instanceof HTMLVideoElement) {
+      width = source.videoWidth;
+      height = source.videoHeight;
+    } else if (source instanceof VideoFrame) {
+      width = source.codedWidth;
+      height = source.codedHeight;
+    } else {
+      width = source.width;
+      height = source.height;
+    }
+
     device.queue.copyExternalImageToTexture(
       { source },
       { texture },
-      { width: source.width, height: source.height }
+      { width, height }
     );
 
     if (texture.mipLevelCount > 1) {
