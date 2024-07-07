@@ -1,10 +1,9 @@
 import shaderCode from "@/shaders/shader.wgsl";
 import mipmapShaderCode from "@/shaders/mipmap.wgsl";
-import { mat4, quat, utils, vec3, vec4 } from "wgpu-matrix";
+import { mat4, utils, vec3, vec4 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import {
   loadImageBitmap,
-  rand,
   calculateMipLevelCount,
   RollingAverage,
 } from "@/utils";
@@ -28,6 +27,8 @@ export default class Renderer {
   private indexBuffer: GPUBuffer;
   private bindGroups: Array<Array<GPUBindGroup>>;
   private uniformBuffer: GPUBuffer;
+  private depthTexture: GPUTexture;
+  private depthTextureView: GPUTextureView;
 
   private current: number;
 
@@ -70,6 +71,7 @@ export default class Renderer {
     await this.requestDevice();
     this.getCanvas();
     this.configContext();
+    this.createDepthTexture();
     this.createRenderPipeline();
     this.createVertexBuffer();
     this.createIndexBuffer();
@@ -153,6 +155,8 @@ export default class Renderer {
           1,
           Math.min(height, this.device.limits.maxTextureDimension2D)
         );
+        this.depthTexture.destroy();
+        this.createDepthTexture();
       }
     });
     observer.observe(this.canvas);
@@ -170,6 +174,19 @@ export default class Renderer {
       device: this.device,
       format: this.presentationFormat,
       alphaMode: "premultiplied",
+    });
+  }
+
+  private async createDepthTexture() {
+    this.depthTexture = this.device.createTexture({
+      label: "GPU Texture: Depth Texture",
+      size: [this.canvas.width, this.canvas.height],
+      format: "depth24plus",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    this.depthTextureView = this.depthTexture.createView({
+      label: "GPU Texture View: Depth Texture View",
     });
   }
 
@@ -206,6 +223,12 @@ export default class Renderer {
       },
       primitive: {
         topology: "triangle-list",
+        cullMode: "back",
+      },
+      depthStencil: {
+        format: "depth24plus",
+        depthWriteEnabled: true,
+        depthCompare: "less",
       },
       fragment: {
         module: shaderModule,
@@ -325,7 +348,7 @@ export default class Renderer {
       );
 
       const textureView = texture.createView({
-        label: `GPU Texture View ${i}`,
+        label: `GPU Texture View: 2D Texture View ${i}`,
       });
 
       const bindGroup = this.device.createBindGroup({
@@ -846,6 +869,12 @@ export default class Renderer {
     const renderPassDescriptor: GPURenderPassDescriptor = {
       label: "GPU Renderpass Descriptor: Draw Frame",
       colorAttachments,
+      depthStencilAttachment: {
+        view: this.depthTextureView,
+        depthClearValue: 1.0,
+        depthLoadOp: "clear",
+        depthStoreOp: "store",
+      },
     };
 
     if (this.hasTimestamp) {
