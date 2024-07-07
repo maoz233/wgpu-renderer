@@ -20,5 +20,29 @@ export async function loadImageBitmap(url: string) {
 export function calculateMipLevelCount(...sizes: number[]) {
   const maxSize = Math.max(...sizes);
 
-  return 1 + Math.log2(maxSize) | 0;
+  return (1 + Math.log2(maxSize)) | 0;
+}
+
+export class RollingAverage {
+  private total: number;
+  private samples: number[];
+  private cursor: number;
+  private sampleCount: number;
+
+  public constructor(sampleCount = 30) {
+    this.total = 0;
+    this.samples = [];
+    this.cursor = 0;
+    this.sampleCount = sampleCount;
+  }
+
+  public set value(value: number) {
+    this.total += value - (this.samples[this.cursor] || 0);
+    this.samples[this.cursor] = value;
+    this.cursor = (this.cursor + 1) % this.sampleCount;
+  }
+
+  public get value() {
+    return this.total / this.samples.length;
+  }
 }

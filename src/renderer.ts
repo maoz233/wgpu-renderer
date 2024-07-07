@@ -2,12 +2,21 @@ import shaderCode from "@/shaders/shader.wgsl";
 import mipmapShaderCode from "@/shaders/mipmap.wgsl";
 import { mat4, utils } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
-import { loadImageBitmap, rand, calculateMipLevelCount } from "@/utils";
+import {
+  loadImageBitmap,
+  rand,
+  calculateMipLevelCount,
+  RollingAverage,
+} from "@/utils";
 
 type Transform = {
   offset: number[];
   scale: number;
 };
+
+const fpsAvg = new RollingAverage();
+const cpuTimeAvg = new RollingAverage();
+const gpuTimeAvg = new RollingAverage();
 
 export default class Renderer {
   private adapter: GPUAdapter;
@@ -641,12 +650,14 @@ export default class Renderer {
 
     const profilerGUI = gui.addFolder("Profiler");
     profilerGUI.closed = false;
-    this.fpsController = profilerGUI.add(profiler, "fps").name("FPS");
+    this.fpsController = profilerGUI
+      .add({ display: "" }, "display")
+      .name("FPS");
     this.cpuTimeController = profilerGUI
-      .add(profiler, "cpuTime")
+      .add({ display: "" }, "display")
       .name("CPU Time (ms)");
     this.gpuTimeController = profilerGUI
-      .add(profiler, "gpuTime")
+      .add({ display: "" }, "display")
       .name("GPU Time (µs)");
 
     // camera GUI
@@ -694,7 +705,8 @@ export default class Renderer {
   }
 
   private drawFrame(now: number) {
-    this.fpsController.setValue((1000 / (now - this.current)).toFixed(2));
+    fpsAvg.value = 1000 / (now - this.current);
+    this.fpsController.setValue(fpsAvg.value.toFixed(1));
     this.current = now;
 
     const startTime = performance.now();
@@ -743,17 +755,18 @@ export default class Renderer {
       },
     ];
 
-    const renderPassDescriptor = {
+    const renderPassDescriptor: GPURenderPassDescriptor = {
       label: "GPU Renderpass Descriptor: Draw Frame",
       colorAttachments,
-      ...(this.hasTimestamp && {
-        timestampWrites: {
-          querySet: this.querySet,
-          beginningOfPassWriteIndex: 0,
-          endOfPassWriteIndex: 1,
-        },
-      }),
     };
+
+    if (this.hasTimestamp) {
+      renderPassDescriptor.timestampWrites = {
+        querySet: this.querySet,
+        beginningOfPassWriteIndex: 0,
+        endOfPassWriteIndex: 1,
+      };
+    }
 
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setPipeline(this.renderPipeline);
@@ -819,12 +832,15 @@ export default class Renderer {
 
     this.device.queue.submit([commandEncoder.finish()]);
 
-    this.cpuTimeController.setValue((performance.now() - startTime).toFixed(2));
+    cpuTimeAvg.value = performance.now() - startTime;
+    this.cpuTimeController.setValue(cpuTimeAvg.value.toFixed(1));
 
     if (this.hasTimestamp && "unmapped" === this.resultBuffer.mapState) {
       this.resultBuffer.mapAsync(GPUMapMode.READ).then(() => {
         const times = new BigInt64Array(this.resultBuffer.getMappedRange());
-        this.gpuTimeController.setValue(Number(times[1] - times[0]).toFixed(2));
+        console.log(times[1], times[0], times[1] - times[0]);
+        gpuTimeAvg.value = Number(times[1] - times[0]) / 1000;
+        this.gpuTimeController.setValue(gpuTimeAvg.value.toFixed(1));
 
         this.resultBuffer.unmap();
       });
