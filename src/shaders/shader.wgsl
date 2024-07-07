@@ -10,7 +10,8 @@ struct VertexOut {
 
 
 @group(0) @binding(0) var<uniform> mvp : mat4x4f;
-@group(1) @binding(0) var myTexture : texture_2d<f32>;
+@group(1) @binding(0) var containerTexture : texture_2d<f32>;
+@group(1) @binding(1) var faceTexture : texture_2d<f32>;
 @group(2) @binding(0) var mySampler : sampler;
 
 @vertex
@@ -25,5 +26,8 @@ fn vs_main(vertData : VertexInput) -> VertexOut {
 
 @fragment
 fn fs_main(fragData : VertexOut) -> @location(0) vec4f {
-  return textureSample(myTexture, mySampler, fragData.texCoord);
+  var containerColor = textureSample(containerTexture, mySampler, fragData.texCoord);
+  var faceColor = textureSample(faceTexture, mySampler, fragData.texCoord);
+
+  return mix(containerColor, faceColor, 0.2);
 }

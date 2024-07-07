@@ -21,14 +21,14 @@ export default class Renderer {
   private resultBuffer: GPUBuffer;
   private canvas: HTMLCanvasElement;
   private context: GPUCanvasContext;
+  private depthTexture: GPUTexture;
+  private depthTextureView: GPUTextureView;
   private presentationFormat: GPUTextureFormat;
   private renderPipeline: GPURenderPipeline;
   private vertexBuffer: GPUBuffer;
   private indexBuffer: GPUBuffer;
   private bindGroups: Array<Array<GPUBindGroup>>;
   private uniformBuffer: GPUBuffer;
-  private depthTexture: GPUTexture;
-  private depthTextureView: GPUTextureView;
 
   private current: number;
 
@@ -243,55 +243,33 @@ export default class Renderer {
   }
 
   private createVertexBuffer() {
-    const vertexComponents = 4;
-    const texCoordComponents = 2;
-    const unitSize =
-      (vertexComponents + texCoordComponents) * Float32Array.BYTES_PER_ELEMENT;
-
-    const data = [
-      {
-        vertex: [-1.0, 1.0, 1.0, 1.0],
-        texCoord: [0.0, 0.0],
-      },
-      {
-        vertex: [-1.0, -1.0, 1.0, 1.0],
-        texCoord: [0.0, 1.0],
-      },
-      {
-        vertex: [1.0, 1.0, 1.0, 1.0],
-        texCoord: [1.0, 0.0],
-      },
-      {
-        vertex: [1.0, -1.0, 1.0, 1.0],
-        texCoord: [1.0, 1.0],
-      },
-      {
-        vertex: [-1.0, 1.0, -1.0, 1.0],
-        texCoord: [1.0, 0.0],
-      },
-      {
-        vertex: [-1.0, -1.0, -1.0, 1.0],
-        texCoord: [1.0, 1.0],
-      },
-      {
-        vertex: [1.0, 1.0, -1.0, 1.0],
-        texCoord: [0.0, 0.0],
-      },
-      {
-        vertex: [1.0, -1.0, -1.0, 1.0],
-        texCoord: [0.0, 1.0],
-      },
-    ];
-
-    let vertexOffset = 0;
-    let texCoordOffset = vertexComponents;
-    const vertices = new Float32Array(data.length * unitSize);
-    for (let i = 0; i < data.length; ++i) {
-      vertices.set(data[i].vertex, vertexOffset);
-      vertices.set(data[i].texCoord, texCoordOffset);
-      vertexOffset += vertexComponents + texCoordComponents;
-      texCoordOffset += vertexComponents + texCoordComponents;
-    }
+    // prettier-ignore
+    const vertices = new Float32Array([
+      -1.0,  1.0,  1.0, 1.0, 0.0, 0.0, 
+      -1.0,  1.0,  1.0, 1.0, 1.0, 0.0, 
+      -1.0,  1.0,  1.0, 1.0, 0.0, 1.0, 
+      -1.0, -1.0,  1.0, 1.0, 0.0, 1.0, 
+      -1.0, -1.0,  1.0, 1.0, 1.0, 1.0, 
+      -1.0, -1.0,  1.0, 1.0, 0.0, 0.0, 
+       1.0,  1.0,  1.0, 1.0, 1.0, 0.0,
+       1.0,  1.0,  1.0, 1.0, 0.0, 0.0, 
+       1.0,  1.0,  1.0, 1.0, 1.0, 1.0, 
+       1.0, -1.0,  1.0, 1.0, 1.0, 1.0, 
+       1.0, -1.0,  1.0, 1.0, 0.0, 1.0, 
+       1.0, -1.0,  1.0, 1.0, 1.0, 0.0, 
+      -1.0,  1.0, -1.0, 1.0, 1.0, 0.0, 
+      -1.0,  1.0, -1.0, 1.0, 0.0, 0.0,
+      -1.0,  1.0, -1.0, 1.0, 0.0, 0.0, 
+      -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 
+      -1.0, -1.0, -1.0, 1.0, 0.0, 1.0, 
+      -1.0, -1.0, -1.0, 1.0, 0.0, 1.0, 
+       1.0,  1.0, -1.0, 1.0, 0.0, 0.0, 
+       1.0,  1.0, -1.0, 1.0, 1.0, 0.0, 
+       1.0,  1.0, -1.0, 1.0, 1.0, 0.0, 
+       1.0, -1.0, -1.0, 1.0, 0.0, 1.0, 
+       1.0, -1.0, -1.0, 1.0, 1.0, 1.0,
+       1.0, -1.0, -1.0, 1.0, 1.0, 1.0,
+    ]);
 
     this.vertexBuffer = this.createBuffer(
       "GPU Buffer: Vertex",
@@ -311,12 +289,12 @@ export default class Renderer {
   private createIndexBuffer() {
     // prettier-ignore
     const indices = new Uint32Array([
-      0, 1, 2, 2, 1, 3, 
-      2, 3, 6, 6, 3, 7, 
-      6, 7, 4, 4, 7, 5, 
-      4, 5, 0, 0, 5, 1, 
-      4, 0, 6, 6, 0, 2,  
-      1, 5, 3, 3, 5, 7,
+       0,  3,  6,  6,  3,  9,
+       7, 10, 19, 19, 10, 22,
+      18, 21, 12, 12, 21, 15,
+      13, 16,  1,  1, 16,  4,
+      14,  2, 20, 20,  2,  8,
+       5, 17, 11, 11, 17, 23,
     ]);
 
     this.indexBuffer = this.createBuffer(
@@ -357,30 +335,52 @@ export default class Renderer {
   }
 
   private async createTexture() {
-    const imageBitMap = await loadImageBitmap("images/f-texture.png");
+    const contianerImageBitMap = await loadImageBitmap("images/container.jpg");
+    const faceImageBitMap = await loadImageBitmap("images/awesomeface.png");
 
     for (let i = 0; i < 2; ++i) {
-      const mipLevelCount = i
-        ? calculateMipLevelCount(imageBitMap.width, imageBitMap.height)
+      const contianerMipLevelCount = i
+        ? calculateMipLevelCount(
+            contianerImageBitMap.width,
+            contianerImageBitMap.height
+          )
         : 1;
 
-      const texture = this.createTextureFromSource(
-        `GPU Texture: 2D Texture ${i}`,
-        imageBitMap,
-        mipLevelCount
+      const contianerTexture = this.createTextureFromSource(
+        `GPU Texture: Contianer ${i}`,
+        contianerImageBitMap,
+        contianerMipLevelCount
       );
 
-      const textureView = texture.createView({
-        label: `GPU Texture View: 2D Texture View ${i}`,
+      const contianerTextureView = contianerTexture.createView({
+        label: `GPU Texture View: Contianer ${i}`,
+      });
+
+      const faceMipLevelCount = i
+        ? calculateMipLevelCount(faceImageBitMap.width, faceImageBitMap.height)
+        : 1;
+
+      const faceTexture = this.createTextureFromSource(
+        `GPU Texture: Face ${i}`,
+        faceImageBitMap,
+        faceMipLevelCount
+      );
+
+      const faceTextureView = faceTexture.createView({
+        label: `GPU Texture View: Face ${i}`,
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 1: Texture ${i}`,
+        label: `GPU Bind Group 1: Face ${i}`,
         layout: this.renderPipeline.getBindGroupLayout(1),
         entries: [
           {
             binding: 0,
-            resource: textureView,
+            resource: contianerTextureView,
+          },
+          {
+            binding: 1,
+            resource: faceTextureView,
           },
         ],
       });
@@ -802,7 +802,10 @@ export default class Renderer {
     const startTime = performance.now();
 
     // model matrix
-    const model = mat4.identity();
+    const model = mat4.rotateY(
+      mat4.rotateX(mat4.identity(), utils.degToRad(45.0)),
+      utils.degToRad(45.0)
+    );
 
     // view matrix
     let eye = vec3.create(
