@@ -243,7 +243,6 @@ export default class Renderer {
   }
 
   private createVertexBuffer() {
-    const vertexCount = 4;
     const vertexComponents = 4;
     const texCoordComponents = 2;
     const unitSize =
@@ -251,27 +250,43 @@ export default class Renderer {
 
     const data = [
       {
-        vertex: [-0.5, 0.5, 0.0, 1.0],
+        vertex: [-1.0, 1.0, 1.0, 1.0],
         texCoord: [0.0, 0.0],
       },
       {
-        vertex: [-0.5, -0.5, 0.0, 1.0],
+        vertex: [-1.0, -1.0, 1.0, 1.0],
         texCoord: [0.0, 1.0],
       },
       {
-        vertex: [0.5, 0.5, 0.0, 1.0],
+        vertex: [1.0, 1.0, 1.0, 1.0],
         texCoord: [1.0, 0.0],
       },
       {
-        vertex: [0.5, -0.5, 0.0, 1.0],
+        vertex: [1.0, -1.0, 1.0, 1.0],
         texCoord: [1.0, 1.0],
+      },
+      {
+        vertex: [-1.0, 1.0, -1.0, 1.0],
+        texCoord: [1.0, 0.0],
+      },
+      {
+        vertex: [-1.0, -1.0, -1.0, 1.0],
+        texCoord: [1.0, 1.0],
+      },
+      {
+        vertex: [1.0, 1.0, -1.0, 1.0],
+        texCoord: [0.0, 0.0],
+      },
+      {
+        vertex: [1.0, -1.0, -1.0, 1.0],
+        texCoord: [0.0, 1.0],
       },
     ];
 
     let vertexOffset = 0;
     let texCoordOffset = vertexComponents;
-    const vertices = new Float32Array(vertexCount * unitSize);
-    for (let i = 0; i < vertexCount; ++i) {
+    const vertices = new Float32Array(data.length * unitSize);
+    for (let i = 0; i < data.length; ++i) {
       vertices.set(data[i].vertex, vertexOffset);
       vertices.set(data[i].texCoord, texCoordOffset);
       vertexOffset += vertexComponents + texCoordComponents;
@@ -294,7 +309,15 @@ export default class Renderer {
   }
 
   private createIndexBuffer() {
-    const indices = new Uint32Array([0, 1, 2, 2, 1, 3]);
+    // prettier-ignore
+    const indices = new Uint32Array([
+      0, 1, 2, 2, 1, 3, 
+      2, 3, 6, 6, 3, 7, 
+      6, 7, 4, 4, 7, 5, 
+      4, 5, 0, 0, 5, 1, 
+      4, 0, 6, 6, 0, 2,  
+      1, 5, 3, 3, 5, 7,
+    ]);
 
     this.indexBuffer = this.createBuffer(
       "GPU Buffer: Index",
@@ -675,16 +698,16 @@ export default class Renderer {
 
     // camera GUI
     const camera = {
-      mode: "WASD",
+      mode: "Arcball",
       fovY: 30.0,
       position: {
         x: 0.0,
         y: 0.0,
-        z: 3.0,
+        z: 10.0,
       },
       rotation: {
         pitch: 0.0,
-        yaw: -90.0,
+        yaw: 0.0,
         roll: 0.0,
       },
     };
@@ -892,7 +915,7 @@ export default class Renderer {
     passEncoder.setBindGroup(0, this.bindGroups[0][0]);
     passEncoder.setBindGroup(1, this.bindGroups[1][textureIndex]);
     passEncoder.setBindGroup(2, this.bindGroups[2][samplerIndex]);
-    passEncoder.drawIndexed(6);
+    passEncoder.drawIndexed(36);
 
     passEncoder.end();
 
