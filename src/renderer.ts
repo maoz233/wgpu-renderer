@@ -712,6 +712,7 @@ export default class Renderer {
       },
     };
     const cameraGUI = gui.addFolder("Camera");
+    cameraGUI.closed = false;
     this.modeController = cameraGUI
       .add(camera, "mode")
       .name("Mode")
@@ -719,7 +720,7 @@ export default class Renderer {
       .onChange((value: "WASD" | "Arcball") => {
         this.positionXController.setValue(0.0);
         this.positionYController.setValue(0.0);
-        this.positionZController.setValue(3.0);
+        this.positionZController.setValue(10.0);
         this.rotationXController.setValue(0.0);
 
         if ("WASD" === value) {
@@ -733,6 +734,7 @@ export default class Renderer {
       .name("FoV (Y)");
     // camera postion GUI
     const cameraPositionGUI = cameraGUI.addFolder("Position");
+    cameraPositionGUI.closed = false;
     this.positionXController = cameraPositionGUI
       .add(camera.position, "x")
       .step(0.1)
@@ -747,6 +749,7 @@ export default class Renderer {
       .name("Z");
     // camera rotation GUI
     const cameraRotationGUI = cameraGUI.addFolder("Rotation");
+    cameraRotationGUI.closed = false;
     this.rotationXController = cameraRotationGUI
       .add(camera.rotation, "pitch", -180.0, 180.0, 0.1)
       .name("Pitch");
@@ -765,6 +768,7 @@ export default class Renderer {
     };
 
     const textureOptionsGUI = gui.addFolder("Texture Options");
+    textureOptionsGUI.closed = false;
     this.mipmapsController = textureOptionsGUI
       .add(textureOptions, "mimaps")
       .name("Mipmaps");
