@@ -1,6 +1,6 @@
 import shaderCode from "@/shaders/shader.wgsl";
 import mipmapShaderCode from "@/shaders/mipmap.wgsl";
-import { mat4, utils } from "wgpu-matrix";
+import { mat4, quat, utils, vec3, vec4 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import {
   loadImageBitmap,
@@ -8,11 +8,6 @@ import {
   calculateMipLevelCount,
   RollingAverage,
 } from "@/utils";
-
-type Transform = {
-  offset: number[];
-  scale: number;
-};
 
 const fpsAvg = new RollingAverage();
 const cpuTimeAvg = new RollingAverage();
@@ -32,15 +27,20 @@ export default class Renderer {
   private vertexBuffer: GPUBuffer;
   private indexBuffer: GPUBuffer;
   private bindGroups: Array<Array<GPUBindGroup>>;
-  private transforms: Array<Transform>;
-  private uniformBuffers: Array<GPUBuffer>;
+  private uniformBuffer: GPUBuffer;
 
   private current: number;
 
   private fpsController: GUIController;
   private cpuTimeController: GUIController;
   private gpuTimeController: GUIController;
+  private modeController: GUIController;
   private fovYController: GUIController;
+  private positionXController: GUIController;
+  private positionYController: GUIController;
+  private positionZController: GUIController;
+  private rotationXController: GUIController;
+  private rotationYController: GUIController;
   private mipmapsController: GUIController;
   private addressModeUController: GUIController;
   private addressModeVController: GUIController;
@@ -48,8 +48,6 @@ export default class Renderer {
   private minFilterController: GUIController;
 
   public constructor() {
-    this.transforms = new Array<Transform>();
-    this.uniformBuffers = new Array<GPUBuffer>();
     this.bindGroups = new Array<Array<GPUBindGroup>>(
       new Array<GPUBindGroup>(),
       new Array<GPUBindGroup>(),
@@ -231,19 +229,19 @@ export default class Renderer {
     const data = [
       {
         vertex: [-0.5, 0.5, 0.0, 1.0],
-        texCoord: [0, 0],
+        texCoord: [0.0, 0.0],
       },
       {
         vertex: [-0.5, -0.5, 0.0, 1.0],
-        texCoord: [0, 1],
+        texCoord: [0.0, 1.0],
       },
       {
         vertex: [0.5, 0.5, 0.0, 1.0],
-        texCoord: [1, 0],
+        texCoord: [1.0, 0.0],
       },
       {
         vertex: [0.5, -0.5, 0.0, 1.0],
-        texCoord: [1, 1],
+        texCoord: [1.0, 1.0],
       },
     ];
 
@@ -291,33 +289,25 @@ export default class Renderer {
   }
 
   private createUniformBuffer() {
-    for (let i = 0; i < 10; ++i) {
-      this.transforms.push({
-        offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
-        scale: rand(0.2, 0.5),
-      });
+    this.uniformBuffer = this.createBuffer(
+      `GPU Uniform Buffer: MVP Matrix`,
+      4 * 4 * Float32Array.BYTES_PER_ELEMENT,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    );
 
-      const uniformBuffer = this.createBuffer(
-        `GPU Uniform Buffer: transform ${i}`,
-        4 * 4 * Float32Array.BYTES_PER_ELEMENT,
-        GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-      );
-      this.uniformBuffers.push(uniformBuffer);
-
-      const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 0: transform ${i}`,
-        layout: this.renderPipeline.getBindGroupLayout(0),
-        entries: [
-          {
-            binding: 0,
-            resource: {
-              buffer: uniformBuffer,
-            },
+    const bindGroup = this.device.createBindGroup({
+      label: `GPU Bind Group 0: MVP Matrix`,
+      layout: this.renderPipeline.getBindGroupLayout(0),
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.uniformBuffer,
           },
-        ],
-      });
-      this.bindGroups[0].push(bindGroup);
-    }
+        },
+      ],
+    });
+    this.bindGroups[0].push(bindGroup);
   }
 
   private async createTexture() {
@@ -361,7 +351,7 @@ export default class Renderer {
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `Bind Group 2: Sampler ${i}`,
+        label: `GPU Bind Group 2: Sampler ${i}`,
         layout: this.renderPipeline.getBindGroupLayout(2),
         entries: [
           {
@@ -651,26 +641,77 @@ export default class Renderer {
     const profilerGUI = gui.addFolder("Profiler");
     profilerGUI.closed = false;
     this.fpsController = profilerGUI
-      .add({ display: "" }, "display")
+      .add({ display: profiler.fps }, "display")
       .name("FPS");
     this.cpuTimeController = profilerGUI
-      .add({ display: "" }, "display")
+      .add({ display: profiler.cpuTime }, "display")
       .name("CPU Time (ms)");
     this.gpuTimeController = profilerGUI
-      .add({ display: "" }, "display")
+      .add({ display: profiler.gpuTime }, "display")
       .name("GPU Time (µs)");
 
     // camera GUI
-    const camera = { fovY: 30 };
+    const camera = {
+      mode: "WASD",
+      fovY: 30.0,
+      position: {
+        x: 0.0,
+        y: 0.0,
+        z: 3.0,
+      },
+      rotation: {
+        pitch: 0.0,
+        yaw: -90.0,
+        roll: 0.0,
+      },
+    };
     const cameraGUI = gui.addFolder("Camera");
-    cameraGUI.closed = false;
+    this.modeController = cameraGUI
+      .add(camera, "mode")
+      .name("Mode")
+      .options(["WASD", "Arcball"])
+      .onChange((value: "WASD" | "Arcball") => {
+        this.positionXController.setValue(0.0);
+        this.positionYController.setValue(0.0);
+        this.positionZController.setValue(3.0);
+        this.rotationXController.setValue(0.0);
+
+        if ("WASD" === value) {
+          this.rotationYController.setValue(-90.0);
+        } else if ("Arcball" === value) {
+          this.rotationYController.setValue(0.0);
+        }
+      });
     this.fovYController = cameraGUI
-      .add(camera, "fovY", 0, 180, 0.1)
+      .add(camera, "fovY", 0.0, 180.0, 0.1)
       .name("FoV (Y)");
+    // camera postion GUI
+    const cameraPositionGUI = cameraGUI.addFolder("Position");
+    this.positionXController = cameraPositionGUI
+      .add(camera.position, "x")
+      .step(0.1)
+      .name("X");
+    this.positionYController = cameraPositionGUI
+      .add(camera.position, "y")
+      .step(0.1)
+      .name("Y");
+    this.positionZController = cameraPositionGUI
+      .add(camera.position, "z")
+      .step(0.1)
+      .name("Z");
+    // camera rotation GUI
+    const cameraRotationGUI = cameraGUI.addFolder("Rotation");
+    this.rotationXController = cameraRotationGUI
+      .add(camera.rotation, "pitch", -180.0, 180.0, 0.1)
+      .name("Pitch");
+    this.rotationYController = cameraRotationGUI
+      .add(camera.rotation, "yaw", -180.0, 180.0, 0.1)
+      .step(0.1)
+      .name("Yaw");
 
     // texture options GUI
     const textureOptions = {
-      mimaps: false,
+      mimaps: true,
       addressModeU: "repeat",
       addressModeV: "repeat",
       magFilter: "linear",
@@ -678,7 +719,6 @@ export default class Renderer {
     };
 
     const textureOptionsGUI = gui.addFolder("Texture Options");
-    textureOptionsGUI.closed = false;
     this.mipmapsController = textureOptionsGUI
       .add(textureOptions, "mimaps")
       .name("Mipmaps");
@@ -711,18 +751,66 @@ export default class Renderer {
 
     const startTime = performance.now();
 
-    // model-view-projectin matrix
-    const aspect = this.canvas.width / this.canvas.height;
-    const view = mat4.lookAt(
-      [0.0, 0.0, -3.0],
-      [0.0, 0.0, 0.0],
-      [0.0, 1.0, 0.0]
+    // model matrix
+    const model = mat4.identity();
+
+    // view matrix
+    let eye = vec3.create(
+      this.positionXController.getValue(),
+      this.positionYController.getValue(),
+      this.positionZController.getValue()
     );
+    const pitch = utils.degToRad(this.rotationXController.getValue());
+    const yaw = utils.degToRad(this.rotationYController.getValue());
+    let up = vec3.create(0.0, 1.0, 0.0);
+
+    let view: Float32Array;
+
+    if ("WASD" === this.modeController.getValue()) {
+      let direction = vec3.create(0.0, 0.0, -1.0);
+      direction[0] = Math.cos(yaw) * Math.cos(pitch);
+      direction[1] = Math.sin(pitch);
+      direction[2] = Math.sin(yaw) * Math.cos(pitch);
+      let right = vec3.normalize(vec3.cross(direction, up));
+      up = vec3.normalize(vec3.cross(vec3.negate(direction), right));
+      view = mat4.lookAt(eye, vec3.add(eye, direction), up);
+    } else if ("Arcball" === this.modeController.getValue()) {
+      const rotation = mat4.rotateY(mat4.rotateX(mat4.identity(), pitch), yaw);
+      const newEye = mat4.mul(
+        rotation,
+        vec4.create(eye[0], eye[1], eye[2], 1.0)
+      );
+      eye = vec3.create(
+        newEye[0] / newEye[3],
+        newEye[1] / newEye[3],
+        newEye[2] / newEye[3]
+      );
+      const newUp = mat4.mul(rotation, vec4.create(up[0], up[1], up[2], 1.0));
+      up = vec3.create(
+        newUp[0] / newUp[3],
+        newUp[1] / newUp[3],
+        newUp[2] / newUp[3]
+      );
+      view = mat4.lookAt(eye, vec3.create(0.0, 0.0, 0.0), up);
+    }
+
+    // projection matrix
+    const aspect = this.canvas.width / this.canvas.height;
     const projection = mat4.perspective(
       utils.degToRad(this.fovYController.getValue()),
       aspect,
       1.0,
       100.0
+    );
+
+    // model-view-projection matrix
+    const mvp = mat4.multiply(projection, mat4.multiply(view, model));
+    this.device.queue.writeBuffer(
+      this.uniformBuffer,
+      0,
+      mvp.buffer,
+      mvp.byteOffset,
+      mvp.byteLength
     );
 
     // texture index
@@ -772,41 +860,10 @@ export default class Renderer {
     passEncoder.setPipeline(this.renderPipeline);
     passEncoder.setVertexBuffer(0, this.vertexBuffer);
     passEncoder.setIndexBuffer(this.indexBuffer, "uint32");
-
-    this.transforms.forEach(
-      ({ offset, scale }: Transform, transformIndex: number) => {
-        const scaleMat = mat4.scale(mat4.identity(), [
-          scale / aspect,
-          scale,
-          1.0,
-          1.0,
-        ]);
-        const translateMat = mat4.translate(mat4.identity(), [
-          ...offset,
-          1.0,
-          1.0,
-        ]);
-        const rotateMat = mat4.rotateY(
-          mat4.identity(),
-          (this.current / 1000) % 360
-        );
-
-        const model = mat4.mul(scaleMat, mat4.mul(translateMat, rotateMat));
-        const transform = mat4.multiply(projection, mat4.multiply(view, model));
-        this.device.queue.writeBuffer(
-          this.uniformBuffers[transformIndex],
-          0,
-          transform.buffer,
-          transform.byteOffset,
-          transform.byteLength
-        );
-
-        passEncoder.setBindGroup(0, this.bindGroups[0][transformIndex]);
-        passEncoder.setBindGroup(1, this.bindGroups[1][textureIndex]);
-        passEncoder.setBindGroup(2, this.bindGroups[2][samplerIndex]);
-        passEncoder.drawIndexed(6);
-      }
-    );
+    passEncoder.setBindGroup(0, this.bindGroups[0][0]);
+    passEncoder.setBindGroup(1, this.bindGroups[1][textureIndex]);
+    passEncoder.setBindGroup(2, this.bindGroups[2][samplerIndex]);
+    passEncoder.drawIndexed(6);
 
     passEncoder.end();
 
@@ -838,7 +895,6 @@ export default class Renderer {
     if (this.hasTimestamp && "unmapped" === this.resultBuffer.mapState) {
       this.resultBuffer.mapAsync(GPUMapMode.READ).then(() => {
         const times = new BigInt64Array(this.resultBuffer.getMappedRange());
-        console.log(times[1], times[0], times[1] - times[0]);
         gpuTimeAvg.value = Number(times[1] - times[0]) / 1000;
         this.gpuTimeController.setValue(gpuTimeAvg.value.toFixed(1));
 
