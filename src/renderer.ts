@@ -1,6 +1,6 @@
 import shaderCode from "@/shaders/shader.wgsl";
 import mipmapShaderCode from "@/shaders/mipmap.wgsl";
-import { mat4, utils, vec3, vec4 } from "wgpu-matrix";
+import { mat4, utils, vec3 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import {
   loadImageBitmap,
@@ -696,7 +696,13 @@ export default class Renderer {
 
     // camera GUI
     const camera = {
-      mode: "Arcball",
+      reset: () => {
+        this.fovYController.setValue(45.0);
+        this.xController.setValue(3.0);
+        this.yController.setValue(3.0);
+        this.zController.setValue(10.0);
+        this.yawController.setValue(0.0);
+      },
       fovY: 45.0,
       position: {
         x: 3.0,
@@ -709,6 +715,7 @@ export default class Renderer {
     };
     const cameraGUI = gui.addFolder("Camera");
     cameraGUI.closed = false;
+    cameraGUI.add(camera, "reset").name("Reset");
     this.fovYController = cameraGUI
       .add(camera, "fovY", 0.0, 180.0, 0.1)
       .name("FoV (Y)");
