@@ -699,7 +699,7 @@ export default class Renderer {
     // camera GUI
     const camera = {
       mode: "Arcball",
-      fovY: 30.0,
+      fovY: 45.0,
       position: {
         x: 0.0,
         y: 0.0,
@@ -715,8 +715,8 @@ export default class Renderer {
     cameraGUI.closed = false;
     this.modeController = cameraGUI
       .add(camera, "mode")
-      .name("Mode")
       .options(["WASD", "Arcball"])
+      .name("Mode")
       .onChange((value: "WASD" | "Arcball") => {
         this.positionXController.setValue(0.0);
         this.positionYController.setValue(0.0);
@@ -828,22 +828,16 @@ export default class Renderer {
       up = vec3.normalize(vec3.cross(vec3.negate(direction), right));
       view = mat4.lookAt(eye, vec3.add(eye, direction), up);
     } else if ("Arcball" === this.modeController.getValue()) {
-      const rotation = mat4.rotateY(mat4.rotateX(mat4.identity(), pitch), yaw);
-      const newEye = mat4.mul(
-        rotation,
-        vec4.create(eye[0], eye[1], eye[2], 1.0)
+      const rotationY = mat4.rotateY(mat4.identity(), yaw);
+      eye = vec3.transformMat4(eye, rotationY);
+      up = vec3.transformMat4(up, rotationY);
+      const newXAxis = vec3.transformMat4(
+        vec3.create(1.0, 0.0, 0.0),
+        rotationY
       );
-      eye = vec3.create(
-        newEye[0] / newEye[3],
-        newEye[1] / newEye[3],
-        newEye[2] / newEye[3]
-      );
-      const newUp = mat4.mul(rotation, vec4.create(up[0], up[1], up[2], 1.0));
-      up = vec3.create(
-        newUp[0] / newUp[3],
-        newUp[1] / newUp[3],
-        newUp[2] / newUp[3]
-      );
+      const rotationX = mat4.rotate(mat4.identity(), newXAxis, pitch);
+      eye = vec3.transformMat4(eye, rotationX);
+      up = vec3.transformMat4(up, rotationX);
       view = mat4.lookAt(eye, vec3.create(0.0, 0.0, 0.0), up);
     }
 
