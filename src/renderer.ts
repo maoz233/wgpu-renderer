@@ -35,13 +35,11 @@ export default class Renderer {
   private fpsController: GUIController;
   private cpuTimeController: GUIController;
   private gpuTimeController: GUIController;
-  private modeController: GUIController;
   private fovYController: GUIController;
-  private positionXController: GUIController;
-  private positionYController: GUIController;
-  private positionZController: GUIController;
-  private rotationXController: GUIController;
-  private rotationYController: GUIController;
+  private xController: GUIController;
+  private yController: GUIController;
+  private zController: GUIController;
+  private yawController: GUIController;
   private mipmapsController: GUIController;
   private addressModeUController: GUIController;
   private addressModeVController: GUIController;
@@ -701,59 +699,38 @@ export default class Renderer {
       mode: "Arcball",
       fovY: 45.0,
       position: {
-        x: 0.0,
-        y: 0.0,
+        x: 3.0,
+        y: 3.0,
         z: 10.0,
       },
       rotation: {
-        pitch: 0.0,
         yaw: 0.0,
-        roll: 0.0,
       },
     };
     const cameraGUI = gui.addFolder("Camera");
     cameraGUI.closed = false;
-    this.modeController = cameraGUI
-      .add(camera, "mode")
-      .options(["WASD", "Arcball"])
-      .name("Mode")
-      .onChange((value: "WASD" | "Arcball") => {
-        this.positionXController.setValue(0.0);
-        this.positionYController.setValue(0.0);
-        this.positionZController.setValue(10.0);
-        this.rotationXController.setValue(0.0);
-
-        if ("WASD" === value) {
-          this.rotationYController.setValue(-90.0);
-        } else if ("Arcball" === value) {
-          this.rotationYController.setValue(0.0);
-        }
-      });
     this.fovYController = cameraGUI
       .add(camera, "fovY", 0.0, 180.0, 0.1)
       .name("FoV (Y)");
     // camera postion GUI
     const cameraPositionGUI = cameraGUI.addFolder("Position");
     cameraPositionGUI.closed = false;
-    this.positionXController = cameraPositionGUI
+    this.xController = cameraPositionGUI
       .add(camera.position, "x")
       .step(0.1)
       .name("X");
-    this.positionYController = cameraPositionGUI
+    this.yController = cameraPositionGUI
       .add(camera.position, "y")
       .step(0.1)
       .name("Y");
-    this.positionZController = cameraPositionGUI
+    this.zController = cameraPositionGUI
       .add(camera.position, "z")
       .step(0.1)
       .name("Z");
     // camera rotation GUI
     const cameraRotationGUI = cameraGUI.addFolder("Rotation");
     cameraRotationGUI.closed = false;
-    this.rotationXController = cameraRotationGUI
-      .add(camera.rotation, "pitch", -180.0, 180.0, 0.1)
-      .name("Pitch");
-    this.rotationYController = cameraRotationGUI
+    this.yawController = cameraRotationGUI
       .add(camera.rotation, "yaw", -180.0, 180.0, 0.1)
       .step(0.1)
       .name("Yaw");
@@ -802,44 +779,21 @@ export default class Renderer {
     const startTime = performance.now();
 
     // model matrix
-    const model = mat4.rotateY(
-      mat4.rotateX(mat4.identity(), utils.degToRad(45.0)),
-      utils.degToRad(45.0)
-    );
+    const model = mat4.identity();
 
     // view matrix
+    const yaw = utils.degToRad(this.yawController.getValue());
     let eye = vec3.create(
-      this.positionXController.getValue(),
-      this.positionYController.getValue(),
-      this.positionZController.getValue()
+      this.xController.getValue(),
+      this.yController.getValue(),
+      this.zController.getValue()
     );
-    const pitch = utils.degToRad(this.rotationXController.getValue());
-    const yaw = utils.degToRad(this.rotationYController.getValue());
+    const rotation = mat4.rotateY(mat4.identity(), yaw);
+    const rotatedEye = vec3.transformMat4(eye, rotation);
+    const target = vec3.create(0.0, 0.0, 0.0);
     let up = vec3.create(0.0, 1.0, 0.0);
 
-    let view: Float32Array;
-
-    if ("WASD" === this.modeController.getValue()) {
-      let direction = vec3.create(0.0, 0.0, -1.0);
-      direction[0] = Math.cos(yaw) * Math.cos(pitch);
-      direction[1] = Math.sin(pitch);
-      direction[2] = Math.sin(yaw) * Math.cos(pitch);
-      let right = vec3.normalize(vec3.cross(direction, up));
-      up = vec3.normalize(vec3.cross(vec3.negate(direction), right));
-      view = mat4.lookAt(eye, vec3.add(eye, direction), up);
-    } else if ("Arcball" === this.modeController.getValue()) {
-      const rotationY = mat4.rotateY(mat4.identity(), yaw);
-      eye = vec3.transformMat4(eye, rotationY);
-      up = vec3.transformMat4(up, rotationY);
-      const newXAxis = vec3.transformMat4(
-        vec3.create(1.0, 0.0, 0.0),
-        rotationY
-      );
-      const rotationX = mat4.rotate(mat4.identity(), newXAxis, pitch);
-      eye = vec3.transformMat4(eye, rotationX);
-      up = vec3.transformMat4(up, rotationX);
-      view = mat4.lookAt(eye, vec3.create(0.0, 0.0, 0.0), up);
-    }
+    const view = mat4.lookAt(rotatedEye, target, up);
 
     // projection matrix
     const aspect = this.canvas.width / this.canvas.height;
