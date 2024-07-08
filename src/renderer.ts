@@ -1,6 +1,6 @@
 import shaderCode from "@/shaders/shader.wgsl";
 import mipmapShaderCode from "@/shaders/mipmap.wgsl";
-import { mat4, utils, vec3 } from "wgpu-matrix";
+import { mat4, utils, vec3, vec4 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import {
   loadImageBitmap,
@@ -28,7 +28,8 @@ export default class Renderer {
   private vertexBuffer: GPUBuffer;
   private indexBuffer: GPUBuffer;
   private bindGroups: Array<Array<GPUBindGroup>>;
-  private uniformBuffer: GPUBuffer;
+  private transformUniformBuffer: GPUBuffer;
+  private lightUniformBuffer: GPUBuffer;
 
   private current: number;
 
@@ -40,6 +41,7 @@ export default class Renderer {
   private yController: GUIController;
   private zController: GUIController;
   private yawController: GUIController;
+  private lightColorController: GUIController;
   private mipmapsController: GUIController;
   private addressModeUController: GUIController;
   private addressModeVController: GUIController;
@@ -202,7 +204,7 @@ export default class Renderer {
         entryPoint: "vs_main",
         buffers: [
           {
-            arrayStride: (4 + 2) * Float32Array.BYTES_PER_ELEMENT,
+            arrayStride: (4 + 2 + 4) * Float32Array.BYTES_PER_ELEMENT,
             stepMode: "vertex" as GPUVertexStepMode,
             attributes: [
               {
@@ -214,6 +216,11 @@ export default class Renderer {
                 format: "float32x2" as GPUVertexFormat,
                 offset: 4 * Float32Array.BYTES_PER_ELEMENT,
                 shaderLocation: 1,
+              },
+              {
+                format: "float32x4" as GPUVertexFormat,
+                offset: 4 * Float32Array.BYTES_PER_ELEMENT,
+                shaderLocation: 2,
               },
             ],
           },
@@ -243,30 +250,30 @@ export default class Renderer {
   private createVertexBuffer() {
     // prettier-ignore
     const vertices = new Float32Array([
-      -1.0,  1.0,  1.0, 1.0, 0.0, 0.0, 
-      -1.0,  1.0,  1.0, 1.0, 1.0, 0.0, 
-      -1.0,  1.0,  1.0, 1.0, 0.0, 1.0, 
-      -1.0, -1.0,  1.0, 1.0, 0.0, 1.0, 
-      -1.0, -1.0,  1.0, 1.0, 1.0, 1.0, 
-      -1.0, -1.0,  1.0, 1.0, 0.0, 0.0, 
-       1.0,  1.0,  1.0, 1.0, 1.0, 0.0,
-       1.0,  1.0,  1.0, 1.0, 0.0, 0.0, 
-       1.0,  1.0,  1.0, 1.0, 1.0, 1.0, 
-       1.0, -1.0,  1.0, 1.0, 1.0, 1.0, 
-       1.0, -1.0,  1.0, 1.0, 0.0, 1.0, 
-       1.0, -1.0,  1.0, 1.0, 1.0, 0.0, 
-      -1.0,  1.0, -1.0, 1.0, 1.0, 0.0, 
-      -1.0,  1.0, -1.0, 1.0, 0.0, 0.0,
-      -1.0,  1.0, -1.0, 1.0, 0.0, 0.0, 
-      -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 
-      -1.0, -1.0, -1.0, 1.0, 0.0, 1.0, 
-      -1.0, -1.0, -1.0, 1.0, 0.0, 1.0, 
-       1.0,  1.0, -1.0, 1.0, 0.0, 0.0, 
-       1.0,  1.0, -1.0, 1.0, 1.0, 0.0, 
-       1.0,  1.0, -1.0, 1.0, 1.0, 0.0, 
-       1.0, -1.0, -1.0, 1.0, 0.0, 1.0, 
-       1.0, -1.0, -1.0, 1.0, 1.0, 1.0,
-       1.0, -1.0, -1.0, 1.0, 1.0, 1.0,
+      -1.0,  1.0,  1.0, 1.0, 0.0, 0.0,  0.0,  0.0,  1.0, 1.0, // 0
+      -1.0,  1.0,  1.0, 1.0, 1.0, 0.0, -1.0,  0.0,  0.0, 1.0, // 1
+      -1.0,  1.0,  1.0, 1.0, 0.0, 1.0,  0.0,  1.0,  0.0, 1.0, // 2
+      -1.0, -1.0,  1.0, 1.0, 0.0, 1.0,  0.0,  0.0,  1.0, 1.0, // 3
+      -1.0, -1.0,  1.0, 1.0, 1.0, 1.0, -1.0,  0.0,  0.0, 1.0, // 4
+      -1.0, -1.0,  1.0, 1.0, 0.0, 0.0,  0.0, -1.0,  0.0, 1.0, // 5
+       1.0,  1.0,  1.0, 1.0, 1.0, 0.0,  0.0,  0.0,  1.0, 1.0, // 6
+       1.0,  1.0,  1.0, 1.0, 0.0, 0.0,  1.0,  0.0,  0.0, 1.0, // 7
+       1.0,  1.0,  1.0, 1.0, 1.0, 1.0,  0.0,  1.0,  0.0, 1.0, // 8
+       1.0, -1.0,  1.0, 1.0, 1.0, 1.0,  0.0,  0.0,  1.0, 1.0, // 9
+       1.0, -1.0,  1.0, 1.0, 0.0, 1.0,  1.0,  0.0,  0.0, 1.0, // 10
+       1.0, -1.0,  1.0, 1.0, 1.0, 0.0,  0.0, -1.0,  0.0, 1.0, // 11
+      -1.0,  1.0, -1.0, 1.0, 1.0, 0.0,  0.0,  0.0, -1.0, 1.0, // 12
+      -1.0,  1.0, -1.0, 1.0, 0.0, 0.0, -1.0,  0.0,  0.0, 1.0, // 13
+      -1.0,  1.0, -1.0, 1.0, 0.0, 0.0,  0.0,  1.0,  0.0, 1.0, // 14
+      -1.0, -1.0, -1.0, 1.0, 1.0, 1.0,  0.0,  0.0, -1.0, 1.0, // 15
+      -1.0, -1.0, -1.0, 1.0, 0.0, 1.0, -1.0,  0.0,  0.0, 1.0, // 16
+      -1.0, -1.0, -1.0, 1.0, 0.0, 1.0,  0.0, -1.0,  0.0, 1.0, // 17
+       1.0,  1.0, -1.0, 1.0, 0.0, 0.0,  0.0,  0.0, -1.0, 1.0, // 18
+       1.0,  1.0, -1.0, 1.0, 1.0, 0.0,  1.0,  0.0,  0.0, 1.0, // 19
+       1.0,  1.0, -1.0, 1.0, 1.0, 0.0,  0.0,  1.0,  0.0, 1.0, // 20
+       1.0, -1.0, -1.0, 1.0, 0.0, 1.0,  0.0,  0.0, -1.0, 1.0, // 21
+       1.0, -1.0, -1.0, 1.0, 1.0, 1.0,  1.0,  0.0,  0.0, 1.0, // 22
+       1.0, -1.0, -1.0, 1.0, 1.0, 1.0,  0.0, -1.0,  0.0, 1.0, // 23
     ]);
 
     this.vertexBuffer = this.createBuffer(
@@ -311,20 +318,32 @@ export default class Renderer {
   }
 
   private createUniformBuffer() {
-    this.uniformBuffer = this.createBuffer(
-      `GPU Uniform Buffer: MVP Matrix`,
-      4 * 4 * Float32Array.BYTES_PER_ELEMENT,
+    this.transformUniformBuffer = this.createBuffer(
+      `GPU Uniform Buffer: Transform`,
+      (4 * 4 + 4 * 4 + 4 * 4) * Float32Array.BYTES_PER_ELEMENT,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    );
+
+    this.lightUniformBuffer = this.createBuffer(
+      `GPU Uniform Buffer: Light`,
+      (4 + 4) * Float32Array.BYTES_PER_ELEMENT,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
 
     const bindGroup = this.device.createBindGroup({
-      label: `GPU Bind Group 0: MVP Matrix`,
+      label: `GPU Bind Group 0: Transform & Light`,
       layout: this.renderPipeline.getBindGroupLayout(0),
       entries: [
         {
           binding: 0,
           resource: {
-            buffer: this.uniformBuffer,
+            buffer: this.transformUniformBuffer,
+          },
+        },
+        {
+          binding: 1,
+          resource: {
+            buffer: this.lightUniformBuffer,
           },
         },
       ],
@@ -369,7 +388,7 @@ export default class Renderer {
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 1: Face ${i}`,
+        label: `GPU Bind Group 1: Container, Face ${i}`,
         layout: this.renderPipeline.getBindGroupLayout(1),
         entries: [
           {
@@ -557,34 +576,13 @@ export default class Renderer {
       const pipeline = pipelineByFormat.get(texture.format);
 
       // vertex buffer
-      const data = [
-        {
-          vertex: [-1.0, 1.0, 0.0, 1.0],
-          texCoord: [0.0, 0.0],
-        },
-        {
-          vertex: [-1.0, -1.0, 0.0, 1.0],
-          texCoord: [0.0, 1.0],
-        },
-        {
-          vertex: [1.0, 1.0, 0.0, 1.0],
-          texCoord: [1.0, 0.0],
-        },
-        {
-          vertex: [1.0, -1.0, 0.0, 1.0],
-          texCoord: [1.0, 1.0],
-        },
-      ];
-
-      let vertexOffset = 0;
-      let texCoordOffset = 4;
-      const vertices = new Float32Array(4 * 6);
-      for (let i = 0; i < 4; ++i) {
-        vertices.set(data[i].vertex, vertexOffset);
-        vertices.set(data[i].texCoord, texCoordOffset);
-        vertexOffset += 6;
-        texCoordOffset += 6;
-      }
+      // prettier-ignore
+      const vertices = new Float32Array([
+        -1.0,  1.0, 0.0, 1.0, 0.0, 0.0,
+        -1.0, -1.0, 0.0, 1.0, 0.0, 1.0, 
+         1.0,  1.0, 0.0, 1.0, 1.0, 0.0, 
+         1.0, -1.0, 0.0, 1.0, 1.0, 1.0,
+      ]);
 
       const vertexBuffer = context.createBuffer(
         "GPU Buffer: Mipmaps Generation Vertex",
@@ -742,6 +740,16 @@ export default class Renderer {
       .step(0.1)
       .name("Yaw");
 
+    // light GUI
+    const light = {
+      color: [255, 255, 255, 1.0],
+    };
+    const lightGUI = gui.addFolder("Light");
+    lightGUI.closed = false;
+    this.lightColorController = lightGUI
+      .addColor(light, "color")
+      .name("Light Color");
+
     // texture options GUI
     const textureOptions = {
       mimaps: true,
@@ -785,22 +793,27 @@ export default class Renderer {
 
     const startTime = performance.now();
 
+    // transform values
+    const transformValues = new Float32Array(
+      this.transformUniformBuffer.size / Float32Array.BYTES_PER_ELEMENT
+    );
+
     // model matrix
-    const model = mat4.identity();
+    const yaw = utils.degToRad(this.yawController.getValue());
+    const model = mat4.rotateY(mat4.identity(), yaw);
+    transformValues.set(model, 0);
 
     // view matrix
-    const yaw = utils.degToRad(this.yawController.getValue());
     let eye = vec3.create(
       this.xController.getValue(),
       this.yController.getValue(),
       this.zController.getValue()
     );
-    const rotation = mat4.rotateY(mat4.identity(), yaw);
-    const rotatedEye = vec3.transformMat4(eye, rotation);
     const target = vec3.create(0.0, 0.0, 0.0);
     let up = vec3.create(0.0, 1.0, 0.0);
 
-    const view = mat4.lookAt(rotatedEye, target, up);
+    const view = mat4.lookAt(eye, target, up);
+    transformValues.set(view, model.length);
 
     // projection matrix
     const aspect = this.canvas.width / this.canvas.height;
@@ -810,15 +823,41 @@ export default class Renderer {
       1.0,
       100.0
     );
+    transformValues.set(projection, model.length + view.length);
 
-    // model-view-projection matrix
-    const mvp = mat4.multiply(projection, mat4.multiply(view, model));
     this.device.queue.writeBuffer(
-      this.uniformBuffer,
+      this.transformUniformBuffer,
       0,
-      mvp.buffer,
-      mvp.byteOffset,
-      mvp.byteLength
+      transformValues.buffer,
+      transformValues.byteOffset,
+      transformValues.byteLength
+    );
+
+    // light values
+    const lightValues = new Float32Array(
+      this.lightUniformBuffer.size / Float32Array.BYTES_PER_ELEMENT
+    );
+
+    // light color
+    const color = this.lightColorController.getValue();
+    const lightColor = vec4.create(
+      color[0] / 255,
+      color[1] / 255,
+      color[2] / 255,
+      color[3]
+    );
+    lightValues.set(lightColor, 0);
+
+    // light direction
+    const lightDir = vec4.normalize(vec4.create(-3.0, -5.0, -1.0, 1.0));
+    lightValues.set(lightDir, lightColor.length);
+
+    this.device.queue.writeBuffer(
+      this.lightUniformBuffer,
+      0,
+      lightValues.buffer,
+      lightValues.byteOffset,
+      lightValues.byteLength
     );
 
     // texture index
