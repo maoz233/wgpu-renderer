@@ -35,11 +35,6 @@ export default class Renderer {
   private fpsController: GUIController;
   private cpuTimeController: GUIController;
   private gpuTimeController: GUIController;
-  private fovYController: GUIController;
-  private xController: GUIController;
-  private yController: GUIController;
-  private zController: GUIController;
-  private yawController: GUIController;
   private mipmapsController: GUIController;
   private addressModeUController: GUIController;
   private addressModeVController: GUIController;
@@ -678,54 +673,6 @@ export default class Renderer {
       .add({ display: profiler.gpuTime }, "display")
       .name("GPU Time (µs)");
 
-    // camera GUI
-    const camera = {
-      reset: () => {
-        this.fovYController.setValue(45.0);
-        this.xController.setValue(3.0);
-        this.yController.setValue(3.0);
-        this.zController.setValue(10.0);
-        this.yawController.setValue(0.0);
-      },
-      fovY: 45.0,
-      position: {
-        x: 3.0,
-        y: 3.0,
-        z: 10.0,
-      },
-      rotation: {
-        yaw: 0.0,
-      },
-    };
-    const cameraGUI = gui.addFolder("Camera");
-    cameraGUI.closed = false;
-    cameraGUI.add(camera, "reset").name("Reset");
-    this.fovYController = cameraGUI
-      .add(camera, "fovY", 0.0, 180.0, 0.1)
-      .name("FoV (Y)");
-    // camera postion GUI
-    const cameraPositionGUI = cameraGUI.addFolder("Position");
-    cameraPositionGUI.closed = false;
-    this.xController = cameraPositionGUI
-      .add(camera.position, "x")
-      .step(0.1)
-      .name("X");
-    this.yController = cameraPositionGUI
-      .add(camera.position, "y")
-      .step(0.1)
-      .name("Y");
-    this.zController = cameraPositionGUI
-      .add(camera.position, "z")
-      .step(0.1)
-      .name("Z");
-    // camera rotation GUI
-    const cameraRotationGUI = cameraGUI.addFolder("Rotation");
-    cameraRotationGUI.closed = false;
-    this.yawController = cameraRotationGUI
-      .add(camera.rotation, "yaw", -180.0, 180.0, 0.1)
-      .step(0.1)
-      .name("Yaw");
-
     // texture options GUI
     const textureOptions = {
       mimaps: true,
@@ -775,17 +722,11 @@ export default class Renderer {
     );
 
     // model matrix
-    const yaw = utils.degToRad(this.yawController.getValue());
-    const model = mat4.rotateY(mat4.identity(), yaw);
-    mat4.identity();
+    const model = mat4.identity();
     transformValues.set(model, 0);
 
     // view matrix
-    const eye = vec3.create(
-      this.xController.getValue(),
-      this.yController.getValue(),
-      this.zController.getValue()
-    );
+    const eye = vec3.create(5.0, 5.0, 10.0);
     const target = vec3.create(0.0, 0.0, 0.0);
     const up = vec3.create(0.0, 1.0, 0.0);
 
@@ -795,7 +736,7 @@ export default class Renderer {
     // projection matrix
     const aspect = this.canvas.width / this.canvas.height;
     const projection = mat4.perspective(
-      utils.degToRad(this.fovYController.getValue()),
+      utils.degToRad(45.0),
       aspect,
       1.0,
       100.0
