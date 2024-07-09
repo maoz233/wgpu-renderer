@@ -29,7 +29,6 @@ export default class Renderer {
   private indexBuffer: GPUBuffer;
   private bindGroups: Array<Array<GPUBindGroup>>;
   private transformUniformBuffer: GPUBuffer;
-  private lightUniformBuffer: GPUBuffer;
 
   private current: number;
 
@@ -41,7 +40,6 @@ export default class Renderer {
   private yController: GUIController;
   private zController: GUIController;
   private yawController: GUIController;
-  private lightColorController: GUIController;
   private mipmapsController: GUIController;
   private addressModeUController: GUIController;
   private addressModeVController: GUIController;
@@ -204,22 +202,22 @@ export default class Renderer {
         entryPoint: "vs_main",
         buffers: [
           {
-            arrayStride: (4 + 2 + 4) * Float32Array.BYTES_PER_ELEMENT,
+            arrayStride: (3 + 2 + 3) * Float32Array.BYTES_PER_ELEMENT,
             stepMode: "vertex" as GPUVertexStepMode,
             attributes: [
               {
-                format: "float32x4" as GPUVertexFormat,
+                format: "float32x3" as GPUVertexFormat,
                 offset: 0,
                 shaderLocation: 0,
               },
               {
                 format: "float32x2" as GPUVertexFormat,
-                offset: 4 * Float32Array.BYTES_PER_ELEMENT,
+                offset: 3 * Float32Array.BYTES_PER_ELEMENT,
                 shaderLocation: 1,
               },
               {
-                format: "float32x4" as GPUVertexFormat,
-                offset: 4 * Float32Array.BYTES_PER_ELEMENT,
+                format: "float32x3" as GPUVertexFormat,
+                offset: (3 + 2) * Float32Array.BYTES_PER_ELEMENT,
                 shaderLocation: 2,
               },
             ],
@@ -250,30 +248,30 @@ export default class Renderer {
   private createVertexBuffer() {
     // prettier-ignore
     const vertices = new Float32Array([
-      -1.0,  1.0,  1.0, 1.0, 0.0, 0.0,  0.0,  0.0,  1.0, 1.0, // 0
-      -1.0,  1.0,  1.0, 1.0, 1.0, 0.0, -1.0,  0.0,  0.0, 1.0, // 1
-      -1.0,  1.0,  1.0, 1.0, 0.0, 1.0,  0.0,  1.0,  0.0, 1.0, // 2
-      -1.0, -1.0,  1.0, 1.0, 0.0, 1.0,  0.0,  0.0,  1.0, 1.0, // 3
-      -1.0, -1.0,  1.0, 1.0, 1.0, 1.0, -1.0,  0.0,  0.0, 1.0, // 4
-      -1.0, -1.0,  1.0, 1.0, 0.0, 0.0,  0.0, -1.0,  0.0, 1.0, // 5
-       1.0,  1.0,  1.0, 1.0, 1.0, 0.0,  0.0,  0.0,  1.0, 1.0, // 6
-       1.0,  1.0,  1.0, 1.0, 0.0, 0.0,  1.0,  0.0,  0.0, 1.0, // 7
-       1.0,  1.0,  1.0, 1.0, 1.0, 1.0,  0.0,  1.0,  0.0, 1.0, // 8
-       1.0, -1.0,  1.0, 1.0, 1.0, 1.0,  0.0,  0.0,  1.0, 1.0, // 9
-       1.0, -1.0,  1.0, 1.0, 0.0, 1.0,  1.0,  0.0,  0.0, 1.0, // 10
-       1.0, -1.0,  1.0, 1.0, 1.0, 0.0,  0.0, -1.0,  0.0, 1.0, // 11
-      -1.0,  1.0, -1.0, 1.0, 1.0, 0.0,  0.0,  0.0, -1.0, 1.0, // 12
-      -1.0,  1.0, -1.0, 1.0, 0.0, 0.0, -1.0,  0.0,  0.0, 1.0, // 13
-      -1.0,  1.0, -1.0, 1.0, 0.0, 0.0,  0.0,  1.0,  0.0, 1.0, // 14
-      -1.0, -1.0, -1.0, 1.0, 1.0, 1.0,  0.0,  0.0, -1.0, 1.0, // 15
-      -1.0, -1.0, -1.0, 1.0, 0.0, 1.0, -1.0,  0.0,  0.0, 1.0, // 16
-      -1.0, -1.0, -1.0, 1.0, 0.0, 1.0,  0.0, -1.0,  0.0, 1.0, // 17
-       1.0,  1.0, -1.0, 1.0, 0.0, 0.0,  0.0,  0.0, -1.0, 1.0, // 18
-       1.0,  1.0, -1.0, 1.0, 1.0, 0.0,  1.0,  0.0,  0.0, 1.0, // 19
-       1.0,  1.0, -1.0, 1.0, 1.0, 0.0,  0.0,  1.0,  0.0, 1.0, // 20
-       1.0, -1.0, -1.0, 1.0, 0.0, 1.0,  0.0,  0.0, -1.0, 1.0, // 21
-       1.0, -1.0, -1.0, 1.0, 1.0, 1.0,  1.0,  0.0,  0.0, 1.0, // 22
-       1.0, -1.0, -1.0, 1.0, 1.0, 1.0,  0.0, -1.0,  0.0, 1.0, // 23
+      -1.0,  1.0,  1.0, 0.0, 0.0,  0.0,  0.0,  1.0, // 0
+      -1.0,  1.0,  1.0, 1.0, 0.0, -1.0,  0.0,  0.0, // 1
+      -1.0,  1.0,  1.0, 0.0, 1.0,  0.0,  1.0,  0.0, // 2
+      -1.0, -1.0,  1.0, 0.0, 1.0,  0.0,  0.0,  1.0, // 3
+      -1.0, -1.0,  1.0, 1.0, 1.0, -1.0,  0.0,  0.0, // 4
+      -1.0, -1.0,  1.0, 0.0, 0.0,  0.0, -1.0,  0.0, // 5
+       1.0,  1.0,  1.0, 1.0, 0.0,  0.0,  0.0,  1.0, // 6
+       1.0,  1.0,  1.0, 0.0, 0.0,  1.0,  0.0,  0.0, // 7
+       1.0,  1.0,  1.0, 1.0, 1.0,  0.0,  1.0,  0.0, // 8
+       1.0, -1.0,  1.0, 1.0, 1.0,  0.0,  0.0,  1.0, // 9
+       1.0, -1.0,  1.0, 0.0, 1.0,  1.0,  0.0,  0.0, // 10
+       1.0, -1.0,  1.0, 1.0, 0.0,  0.0, -1.0,  0.0, // 11
+      -1.0,  1.0, -1.0, 1.0, 0.0,  0.0,  0.0, -1.0, // 12
+      -1.0,  1.0, -1.0, 0.0, 0.0, -1.0,  0.0,  0.0, // 13
+      -1.0,  1.0, -1.0, 0.0, 0.0,  0.0,  1.0,  0.0, // 14
+      -1.0, -1.0, -1.0, 1.0, 1.0,  0.0,  0.0, -1.0, // 15
+      -1.0, -1.0, -1.0, 0.0, 1.0, -1.0,  0.0,  0.0, // 16
+      -1.0, -1.0, -1.0, 0.0, 1.0,  0.0, -1.0,  0.0, // 17
+       1.0,  1.0, -1.0, 0.0, 0.0,  0.0,  0.0, -1.0, // 18
+       1.0,  1.0, -1.0, 1.0, 0.0,  1.0,  0.0,  0.0, // 19
+       1.0,  1.0, -1.0, 1.0, 0.0,  0.0,  1.0,  0.0, // 20
+       1.0, -1.0, -1.0, 0.0, 1.0,  0.0,  0.0, -1.0, // 21
+       1.0, -1.0, -1.0, 1.0, 1.0,  1.0,  0.0,  0.0, // 22
+       1.0, -1.0, -1.0, 1.0, 1.0,  0.0, -1.0,  0.0, // 23
     ]);
 
     this.vertexBuffer = this.createBuffer(
@@ -324,26 +322,14 @@ export default class Renderer {
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
 
-    this.lightUniformBuffer = this.createBuffer(
-      `GPU Uniform Buffer: Light`,
-      (4 + 4) * Float32Array.BYTES_PER_ELEMENT,
-      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-    );
-
     const bindGroup = this.device.createBindGroup({
-      label: `GPU Bind Group 0: Transform & Light`,
+      label: `GPU Bind Group 0: Transform`,
       layout: this.renderPipeline.getBindGroupLayout(0),
       entries: [
         {
           binding: 0,
           resource: {
             buffer: this.transformUniformBuffer,
-          },
-        },
-        {
-          binding: 1,
-          resource: {
-            buffer: this.lightUniformBuffer,
           },
         },
       ],
@@ -740,16 +726,6 @@ export default class Renderer {
       .step(0.1)
       .name("Yaw");
 
-    // light GUI
-    const light = {
-      color: [255, 255, 255, 1.0],
-    };
-    const lightGUI = gui.addFolder("Light");
-    lightGUI.closed = false;
-    this.lightColorController = lightGUI
-      .addColor(light, "color")
-      .name("Light Color");
-
     // texture options GUI
     const textureOptions = {
       mimaps: true,
@@ -801,16 +777,17 @@ export default class Renderer {
     // model matrix
     const yaw = utils.degToRad(this.yawController.getValue());
     const model = mat4.rotateY(mat4.identity(), yaw);
+    mat4.identity();
     transformValues.set(model, 0);
 
     // view matrix
-    let eye = vec3.create(
+    const eye = vec3.create(
       this.xController.getValue(),
       this.yController.getValue(),
       this.zController.getValue()
     );
     const target = vec3.create(0.0, 0.0, 0.0);
-    let up = vec3.create(0.0, 1.0, 0.0);
+    const up = vec3.create(0.0, 1.0, 0.0);
 
     const view = mat4.lookAt(eye, target, up);
     transformValues.set(view, model.length);
@@ -831,33 +808,6 @@ export default class Renderer {
       transformValues.buffer,
       transformValues.byteOffset,
       transformValues.byteLength
-    );
-
-    // light values
-    const lightValues = new Float32Array(
-      this.lightUniformBuffer.size / Float32Array.BYTES_PER_ELEMENT
-    );
-
-    // light color
-    const color = this.lightColorController.getValue();
-    const lightColor = vec4.create(
-      color[0] / 255,
-      color[1] / 255,
-      color[2] / 255,
-      color[3]
-    );
-    lightValues.set(lightColor, 0);
-
-    // light direction
-    const lightDir = vec4.normalize(vec4.create(-3.0, -5.0, -1.0, 1.0));
-    lightValues.set(lightDir, lightColor.length);
-
-    this.device.queue.writeBuffer(
-      this.lightUniformBuffer,
-      0,
-      lightValues.buffer,
-      lightValues.byteOffset,
-      lightValues.byteLength
     );
 
     // texture index
