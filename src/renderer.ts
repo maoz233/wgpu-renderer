@@ -53,12 +53,12 @@ export default class Renderer {
     this.drawFrame = this.drawFrame.bind(this);
   }
 
-  public async render() {
+  public async render(): Promise<void> {
     await this.init();
     this.run();
   }
 
-  private async init() {
+  private async init(): Promise<void> {
     this.checkWebGPUSupport();
     await this.requestAdapter();
     await this.requestDevice();
@@ -73,20 +73,20 @@ export default class Renderer {
     this.initGUI();
   }
 
-  private checkWebGPUSupport() {
+  private checkWebGPUSupport(): void {
     if (!navigator.gpu) {
       throw Error("WebGPU not supported.");
     }
   }
 
-  private async requestAdapter() {
+  private async requestAdapter(): Promise<void> {
     this.adapter = await navigator.gpu?.requestAdapter();
     if (!this.adapter) {
       throw Error("Failed to request WebGPU adapter.");
     }
   }
 
-  private async requestDevice() {
+  private async requestDevice(): Promise<void> {
     this.hasTimestamp = this.adapter?.features.has("timestamp-query");
     const requiredFeatures: GPUFeatureName[] = this.hasTimestamp
       ? ["timestamp-query"]
@@ -129,7 +129,7 @@ export default class Renderer {
     });
   }
 
-  private getCanvas() {
+  private getCanvas(): void {
     this.canvas = document.querySelector("canvas");
     if (!this.canvas) {
       throw Error("Failed to find canvas element.");
@@ -155,7 +155,7 @@ export default class Renderer {
     observer.observe(this.canvas);
   }
 
-  private configContext() {
+  private configContext(): void {
     this.context = this.canvas.getContext("webgpu");
     if (!this.context) {
       throw Error("Failed to get WebGPU context from canvas.");
@@ -170,7 +170,7 @@ export default class Renderer {
     });
   }
 
-  private async createDepthTexture() {
+  private async createDepthTexture(): Promise<void> {
     this.depthTexture = this.device.createTexture({
       label: "GPU Texture: Depth Texture",
       size: [this.canvas.width, this.canvas.height],
@@ -183,7 +183,7 @@ export default class Renderer {
     });
   }
 
-  private createRenderPipeline() {
+  private createRenderPipeline(): void {
     const shaderModule = this.createShaderModule(
       "GPU Shader Module",
       shaderCode
@@ -240,7 +240,7 @@ export default class Renderer {
     });
   }
 
-  private createVertexBuffer() {
+  private createVertexBuffer(): void {
     // prettier-ignore
     const vertices = new Float32Array([
       -1.0,  1.0,  1.0, 0.0, 0.0,  0.0,  0.0,  1.0, // 0
@@ -284,7 +284,7 @@ export default class Renderer {
     );
   }
 
-  private createIndexBuffer() {
+  private createIndexBuffer(): void {
     // prettier-ignore
     const indices = new Uint32Array([
        0,  3,  6,  6,  3,  9,
@@ -310,7 +310,7 @@ export default class Renderer {
     );
   }
 
-  private createUniformBuffer() {
+  private createUniformBuffer(): void {
     this.transformUniformBuffer = this.createBuffer(
       `GPU Uniform Buffer: Transform`,
       (4 * 4 + 4 * 4 + 4 * 4) * Float32Array.BYTES_PER_ELEMENT,
@@ -332,7 +332,7 @@ export default class Renderer {
     this.bindGroups[0].push(bindGroup);
   }
 
-  private async createTexture() {
+  private async createTexture(): Promise<void> {
     const contianerImageBitMap = await loadImageBitmap("images/container.jpg");
     const faceImageBitMap = await loadImageBitmap("images/awesomeface.png");
 
@@ -408,7 +408,7 @@ export default class Renderer {
     }
   }
 
-  private createShaderModule(label: string, code: string) {
+  private createShaderModule(label: string, code: string): GPUShaderModule {
     const shaderModule = this.device.createShaderModule({
       label,
       code,
@@ -421,7 +421,7 @@ export default class Renderer {
     label: string,
     size: number,
     usage: GPUBufferUsageFlags
-  ) {
+  ): GPUBuffer {
     const buffer = this.device.createBuffer({
       label,
       size,
@@ -435,7 +435,7 @@ export default class Renderer {
     label: string,
     source: GPUImageCopyExternalImageSource,
     mipLevelCount: number
-  ) {
+  ): GPUTexture {
     let width: number;
     let height: number;
     if (source instanceof HTMLVideoElement) {
@@ -469,7 +469,7 @@ export default class Renderer {
     device: GPUDevice,
     source: GPUImageCopyExternalImageSource,
     texture: GPUTexture
-  ) {
+  ): void {
     let width: number;
     let height: number;
     if (source instanceof HTMLVideoElement) {
@@ -494,7 +494,7 @@ export default class Renderer {
     }
   }
 
-  private generateMipmaps() {
+  private generateMipmaps(): (d: GPUDevice, t: GPUTexture) => void {
     let sampler: GPUSampler;
     let module: GPUShaderModule;
     const pipelineByFormat = new Map<GPUTextureFormat, GPURenderPipeline>();
@@ -650,7 +650,7 @@ export default class Renderer {
     };
   }
 
-  private initGUI() {
+  private initGUI(): void {
     const gui = new GUI({
       name: "My GUI",
       autoPlace: true,
@@ -705,11 +705,11 @@ export default class Renderer {
       .name("minFilter");
   }
 
-  private run() {
+  private run(): void {
     requestAnimationFrame(this.drawFrame);
   }
 
-  private drawFrame(now: number) {
+  private drawFrame(now: number): void {
     fpsAvg.value = 1000 / (now - this.current);
     this.fpsController.setValue(fpsAvg.value.toFixed(1));
     this.current = now;
