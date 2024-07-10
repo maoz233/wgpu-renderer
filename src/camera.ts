@@ -1,4 +1,4 @@
-import { Quat, vec3, Vec3 } from "wgpu-matrix";
+import { mat4, Mat4, quat, Quat, utils, vec3, Vec3 } from "wgpu-matrix";
 
 enum MoveMode {
   NONE = "None",
@@ -12,30 +12,72 @@ export default class Camera {
   private moveMode: MoveMode;
   private x: number;
   private y: number;
-  private theta: number;
-  private phi: number;
+  private rotateAmplitude: number;
+  private pitch: number;
+  private yaw: number;
+  private scrollAmplitude: number;
   private target: Vec3;
   private distance: number;
+  private eye: Vec3;
+  private panAmplitude: number;
   private rotation: Quat;
+  private matrix: Mat4;
 
   public constructor() {
     this.controlled = false;
     this.moveMode = MoveMode.NONE;
+    this.rotateAmplitude = 0.1;
     this.x = 0;
     this.y = 0;
+    this.pitch = 0.0;
+    this.yaw = 0.0;
+    this.scrollAmplitude = 0.01;
     this.target = vec3.create(0.0, 0.0, 0.0);
     this.distance = 10.0;
+    this.eye = vec3.add(
+      this.target,
+      vec3.mulScalar(vec3.create(0.0, 0.0, 1.0), this.distance)
+    );
+    this.panAmplitude = 0.01;
+    this.rotation = quat.create();
+    this.matrix = mat4.identity();
 
     this.onKeyDown = this.onKeyDown.bind(this);
     this.onKeyUp = this.onKeyUp.bind(this);
     this.onMouseDown = this.onMouseDown.bind(this);
     this.onMouseUp = this.onMouseUp.bind(this);
+    this.onMouseMove = this.onMouseMove.bind(this);
 
+    document.addEventListener("contextmenu", (event: MouseEvent) => {
+      event.preventDefault();
+    });
     document.addEventListener("keydown", this.onKeyDown);
     document.addEventListener("keyup", this.onKeyUp);
     document.addEventListener("mousedown", this.onMouseDown);
     document.addEventListener("mouseup", this.onMouseUp);
     document.addEventListener("mousemove", this.onMouseMove);
+  }
+
+  public get view(): Mat4 {
+    const direction = vec3.normalize(
+      vec3.transformQuat(vec3.create(0.0, 0.0, 1.0), this.rotation)
+    );
+    this.eye = vec3.add(this.target, vec3.mulScalar(direction, this.distance));
+    this.matrix = mat4.lookAt(this.eye, this.target, this.up);
+
+    return this.matrix;
+  }
+
+  public get right(): Vec3 {
+    return vec3.normalize(
+      vec3.create(this.matrix[0], this.matrix[4], this.matrix[8])
+    );
+  }
+
+  public get up(): Vec3 {
+    return vec3.normalize(
+      vec3.create(this.matrix[1], this.matrix[5], this.matrix[9])
+    );
   }
 
   private onKeyDown(event: KeyboardEvent): void {
@@ -63,6 +105,9 @@ export default class Camera {
       return;
     }
 
+    this.x = event.clientX;
+    this.y = event.clientY;
+
     switch (event.button) {
       case 0:
         this.moveMode = MoveMode.TUMBLE;
@@ -74,15 +119,9 @@ export default class Camera {
         this.moveMode = MoveMode.DOLLY;
         break;
       default:
+        this.moveMode = MoveMode.NONE;
         break;
     }
-
-    if (MoveMode.NONE === this.moveMode) {
-      return;
-    }
-
-    this.x = event.clientX;
-    this.y = event.clientY;
   }
 
   private onMouseUp(): void {
@@ -101,7 +140,47 @@ export default class Camera {
     const deltaX = event.clientX - this.x;
     this.x = event.clientX;
 
-    const deltaY = event.clientX - this.y;
+    const deltaY = event.clientY - this.y;
     this.y = event.clientY;
+
+    switch (this.moveMode) {
+      case MoveMode.TUMBLE:
+        this.updateCameraRotation(deltaX, deltaY);
+        break;
+      case MoveMode.DOLLY:
+        this.updateCameraDistance(deltaX, deltaY);
+        break;
+      case MoveMode.TRACK:
+        this.updateCameraTarget(deltaX, deltaY);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private updateCameraRotation(deltaX: number, deltaY: number): void {
+    this.yaw -= deltaX * this.rotateAmplitude;
+    this.pitch -= deltaY * this.rotateAmplitude;
+
+    const quatYaw = quat.fromAxisAngle(this.up, utils.degToRad(this.yaw));
+    const quatPitch = quat.fromAxisAngle(
+      this.right,
+      utils.degToRad(this.pitch)
+    );
+
+    this.rotation = quat.mul(quatYaw, quatPitch);
+  }
+
+  private updateCameraDistance(deltaX: number, deltaY: number): void {
+    this.distance -= (deltaX + deltaY) * this.scrollAmplitude;
+  }
+
+  private updateCameraTarget(deltaX: number, deltaY: number) {
+    const panOffset = vec3.transformQuat(
+      vec3.create(-deltaX * this.panAmplitude, deltaY * this.panAmplitude, 0.0),
+      this.rotation
+    );
+
+    this.target = vec3.add(this.target, panOffset);
   }
 }
