@@ -18,10 +18,8 @@ export default class Camera {
   private scrollAmplitude: number;
   private target: Vec3;
   private distance: number;
-  private eye: Vec3;
   private panAmplitude: number;
   private rotation: Quat;
-  private matrix: Mat4;
 
   public constructor() {
     this.controlled = false;
@@ -34,13 +32,8 @@ export default class Camera {
     this.scrollAmplitude = 0.01;
     this.target = vec3.create(0.0, 0.0, 0.0);
     this.distance = 10.0;
-    this.eye = vec3.add(
-      this.target,
-      vec3.mulScalar(vec3.create(0.0, 0.0, 1.0), this.distance)
-    );
     this.panAmplitude = 0.01;
     this.rotation = quat.create();
-    this.matrix = mat4.identity();
 
     this.onKeyDown = this.onKeyDown.bind(this);
     this.onKeyUp = this.onKeyUp.bind(this);
@@ -49,7 +42,9 @@ export default class Camera {
     this.onMouseMove = this.onMouseMove.bind(this);
 
     document.addEventListener("contextmenu", (event: MouseEvent) => {
-      event.preventDefault();
+      if (this.controlled) {
+        event.preventDefault();
+      }
     });
     document.addEventListener("keydown", this.onKeyDown);
     document.addEventListener("keyup", this.onKeyUp);
@@ -62,22 +57,9 @@ export default class Camera {
     const direction = vec3.normalize(
       vec3.transformQuat(vec3.create(0.0, 0.0, 1.0), this.rotation)
     );
-    this.eye = vec3.add(this.target, vec3.mulScalar(direction, this.distance));
-    this.matrix = mat4.lookAt(this.eye, this.target, this.up);
+    const eye = vec3.add(this.target, vec3.mulScalar(direction, this.distance));
 
-    return this.matrix;
-  }
-
-  public get right(): Vec3 {
-    return vec3.normalize(
-      vec3.create(this.matrix[0], this.matrix[4], this.matrix[8])
-    );
-  }
-
-  public get up(): Vec3 {
-    return vec3.normalize(
-      vec3.create(this.matrix[1], this.matrix[5], this.matrix[9])
-    );
+    return mat4.lookAt(eye, this.target, vec3.create(0.0, 1.0, 0.0));
   }
 
   private onKeyDown(event: KeyboardEvent): void {
@@ -162,9 +144,12 @@ export default class Camera {
     this.yaw -= deltaX * this.rotateAmplitude;
     this.pitch -= deltaY * this.rotateAmplitude;
 
-    const quatYaw = quat.fromAxisAngle(this.up, utils.degToRad(this.yaw));
+    const quatYaw = quat.fromAxisAngle(
+      vec3.create(0.0, 1.0, 0.0),
+      utils.degToRad(this.yaw)
+    );
     const quatPitch = quat.fromAxisAngle(
-      this.right,
+      vec3.create(1.0, 0.0, 0.0),
       utils.degToRad(this.pitch)
     );
 
