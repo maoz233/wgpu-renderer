@@ -29,7 +29,7 @@ export class RollingAverage {
   private cursor: number;
   private sampleCount: number;
 
-  public constructor(sampleCount = 30) {
+  public constructor(sampleCount = 100) {
     this.total = 0;
     this.samples = [];
     this.cursor = 0;
