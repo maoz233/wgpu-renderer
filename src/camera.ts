@@ -18,6 +18,7 @@ export default class Camera {
   private scrollAmplitude: number;
   private target: Vec3;
   private distance: number;
+  private eye: Vec3;
   private panAmplitude: number;
   private rotation: Quat;
 
@@ -32,6 +33,7 @@ export default class Camera {
     this.scrollAmplitude = 0.01;
     this.target = vec3.create(0.0, 0.0, 0.0);
     this.distance = 10.0;
+    this.eye = vec3.create(0.0, 0.0, 10.0);
     this.panAmplitude = 0.01;
     this.rotation = quat.create();
 
@@ -57,9 +59,13 @@ export default class Camera {
     const direction = vec3.normalize(
       vec3.transformQuat(vec3.create(0.0, 0.0, 1.0), this.rotation)
     );
-    const eye = vec3.add(this.target, vec3.mulScalar(direction, this.distance));
+    this.eye = vec3.add(this.target, vec3.mulScalar(direction, this.distance));
 
-    return mat4.lookAt(eye, this.target, vec3.create(0.0, 1.0, 0.0));
+    return mat4.lookAt(this.eye, this.target, vec3.create(0.0, 1.0, 0.0));
+  }
+
+  public get position(): Vec3 {
+    return this.eye;
   }
 
   private onKeyDown(event: KeyboardEvent): void {

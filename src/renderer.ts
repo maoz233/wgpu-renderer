@@ -32,6 +32,9 @@ export default class Renderer {
   private indexBuffer: GPUBuffer;
   private bindGroups: Array<Array<GPUBindGroup>>;
   private transformUniformBuffer: GPUBuffer;
+  private viewPositionUniformBuffer: GPUBuffer;
+  private lightUniformBuffer: GPUBuffer;
+  private materialShininessUniformBuffer: GPUBuffer;
 
   private current: number;
 
@@ -318,12 +321,24 @@ export default class Renderer {
   private createUniformBuffer(): void {
     this.transformUniformBuffer = this.createBuffer(
       `GPU Uniform Buffer: Transform`,
-      (4 * 4 + 4 * 4 + 4 * 4) * Float32Array.BYTES_PER_ELEMENT,
+      (4 * 4 + 4 * 4) * Float32Array.BYTES_PER_ELEMENT,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    );
+
+    this.viewPositionUniformBuffer = this.createBuffer(
+      `GPU Uniform Buffer: View Position`,
+      4 * Float32Array.BYTES_PER_ELEMENT,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    );
+
+    this.lightUniformBuffer = this.createBuffer(
+      `GPU Uniform Buffer: Light`,
+      (4 + 4 + 4 + 4) * Float32Array.BYTES_PER_ELEMENT,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
 
     const bindGroup = this.device.createBindGroup({
-      label: `GPU Bind Group 0: Transform`,
+      label: `GPU Bind Group 0: Transform, View Position, Light`,
       layout: this.renderPipeline.getBindGroupLayout(0),
       entries: [
         {
@@ -332,14 +347,34 @@ export default class Renderer {
             buffer: this.transformUniformBuffer,
           },
         },
+        {
+          binding: 1,
+          resource: {
+            buffer: this.viewPositionUniformBuffer,
+          },
+        },
+        {
+          binding: 2,
+          resource: {
+            buffer: this.lightUniformBuffer,
+          },
+        },
       ],
     });
     this.bindGroups[0].push(bindGroup);
   }
 
   private async createTexture(): Promise<void> {
-    const contianerImageBitMap = await loadImageBitmap("images/container.jpg");
-    const faceImageBitMap = await loadImageBitmap("images/awesomeface.png");
+    const contianerImageBitMap = await loadImageBitmap("images/container.png");
+    const contianerSpecularImageBitMap = await loadImageBitmap(
+      "images/container_specular.png"
+    );
+
+    this.materialShininessUniformBuffer = this.createBuffer(
+      `GPU Uniform Buffer: Material Shininess`,
+      4 * Float32Array.BYTES_PER_ELEMENT,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    );
 
     for (let i = 0; i < 2; ++i) {
       const contianerMipLevelCount = i
@@ -359,22 +394,25 @@ export default class Renderer {
         label: `GPU Texture View: Contianer ${i}`,
       });
 
-      const faceMipLevelCount = i
-        ? calculateMipLevelCount(faceImageBitMap.width, faceImageBitMap.height)
+      const containerSpecularMipLevelCount = i
+        ? calculateMipLevelCount(
+            contianerSpecularImageBitMap.width,
+            contianerSpecularImageBitMap.height
+          )
         : 1;
 
-      const faceTexture = this.createTextureFromSource(
-        `GPU Texture: Face ${i}`,
-        faceImageBitMap,
-        faceMipLevelCount
+      const contianerSpecularTexture = this.createTextureFromSource(
+        `GPU Texture: Contianer Specular ${i}`,
+        contianerSpecularImageBitMap,
+        containerSpecularMipLevelCount
       );
 
-      const faceTextureView = faceTexture.createView({
-        label: `GPU Texture View: Face ${i}`,
+      const contianerSpecularTextureView = contianerSpecularTexture.createView({
+        label: `GPU Texture View: Contianer Specular ${i}`,
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 1: Container, Face ${i}`,
+        label: `GPU Bind Group 1: Container, Contianer Specular  ${i}`,
         layout: this.renderPipeline.getBindGroupLayout(1),
         entries: [
           {
@@ -383,7 +421,13 @@ export default class Renderer {
           },
           {
             binding: 1,
-            resource: faceTextureView,
+            resource: contianerSpecularTextureView,
+          },
+          {
+            binding: 2,
+            resource: {
+              buffer: this.materialShininessUniformBuffer,
+            },
           },
         ],
       });
@@ -609,8 +653,8 @@ export default class Renderer {
       let height = texture.height;
       let baseMipLevel = 0;
       while (width > 1 || height > 1) {
-        width = Math.max(1, width / 2);
-        height = Math.max(1, height / 2);
+        width = Math.max(1, (width / 2) | 0);
+        height = Math.max(1, (height / 2) | 0);
 
         const bindGroup = device.createBindGroup({
           label: "GPU Bind Group: Mipmap Generation",
@@ -728,11 +772,13 @@ export default class Renderer {
 
     // model matrix
     const model = mat4.identity();
-    transformValues.set(model, 0);
+
+    // noraml matrix
+    const normal = mat4.transpose(mat4.inverse(model));
+    transformValues.set(normal, 0);
 
     // view matrix
     const view = this.camera.view;
-    transformValues.set(view, model.length);
 
     // projection matrix
     const aspect = this.canvas.width / this.canvas.height;
@@ -742,7 +788,9 @@ export default class Renderer {
       1.0,
       100.0
     );
-    transformValues.set(projection, model.length + view.length);
+
+    const mvp = mat4.mul(projection, mat4.mul(view, model));
+    transformValues.set(mvp, normal.length);
 
     this.device.queue.writeBuffer(
       this.transformUniformBuffer,
@@ -750,6 +798,46 @@ export default class Renderer {
       transformValues.buffer,
       transformValues.byteOffset,
       transformValues.byteLength
+    );
+
+    // camera position
+    this.device.queue.writeBuffer(
+      this.viewPositionUniformBuffer,
+      0,
+      this.camera.position.buffer,
+      this.camera.position.byteOffset,
+      this.camera.position.byteLength
+    );
+
+    // light vlaues
+    const lightValues = new Float32Array(
+      this.lightUniformBuffer.size / Float32Array.BYTES_PER_ELEMENT
+    );
+    const lightDir = vec3.create(0.0, 0.0, -1.0);
+    lightValues.set(lightDir, 0);
+    const lightAmbient = vec3.create(0.2, 0.2, 0.2);
+    lightValues.set(lightAmbient, 4);
+    const lightDiffuse = vec3.create(0.5, 0.5, 0.5);
+    lightValues.set(lightDiffuse, 8);
+    const lightSpecular = vec3.create(1.0, 1.0, 1.0);
+    lightValues.set(lightSpecular, 12);
+
+    this.device.queue.writeBuffer(
+      this.lightUniformBuffer,
+      0,
+      lightValues.buffer,
+      lightValues.byteOffset,
+      lightValues.byteLength
+    );
+
+    // material shininess
+    const shininess = new Float32Array([32.0]);
+    this.device.queue.writeBuffer(
+      this.materialShininessUniformBuffer,
+      0,
+      shininess.buffer,
+      shininess.byteOffset,
+      shininess.byteLength
     );
 
     // texture index
