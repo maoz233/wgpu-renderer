@@ -7,12 +7,15 @@ import {
   calculateMipLevelCount,
   RollingAverage,
 } from "@/utils";
+import Camera from "./camera";
 
 const fpsAvg = new RollingAverage();
 const cpuTimeAvg = new RollingAverage();
 const gpuTimeAvg = new RollingAverage();
 
 export default class Renderer {
+  private camera: Camera;
+
   private adapter: GPUAdapter;
   private device: GPUDevice;
   private hasTimestamp: boolean;
@@ -42,6 +45,8 @@ export default class Renderer {
   private minFilterController: GUIController;
 
   public constructor() {
+    this.camera = new Camera();
+
     this.bindGroups = new Array<Array<GPUBindGroup>>(
       new Array<GPUBindGroup>(),
       new Array<GPUBindGroup>(),
@@ -726,11 +731,7 @@ export default class Renderer {
     transformValues.set(model, 0);
 
     // view matrix
-    const eye = vec3.create(5.0, 5.0, 10.0);
-    const target = vec3.create(0.0, 0.0, 0.0);
-    const up = vec3.create(0.0, 1.0, 0.0);
-
-    const view = mat4.lookAt(eye, target, up);
+    const view = this.camera.view;
     transformValues.set(view, model.length);
 
     // projection matrix
