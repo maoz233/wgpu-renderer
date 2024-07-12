@@ -21,12 +21,14 @@ export default class Camera {
   private target: Vec3;
   private eye: Vec3;
   private up: Vec3;
-  private rotation: Quat;
+  private right: Vec3;
+
+  private div: HTMLDivElement;
 
   public constructor() {
     this.controlled = false;
     this.moveMode = MoveMode.NONE;
-    this.rotateAmplitude = 0.05;
+    this.rotateAmplitude = 0.1;
     this.panAmplitude = 0.01;
     this.scrollAmplitude = 0.01;
     this.x = 0;
@@ -37,8 +39,7 @@ export default class Camera {
     this.target = vec3.create(0.0, 0.0, 0.0);
     this.eye = vec3.create(0.0, 0.0, 10.0);
     this.up = vec3.create(0.0, 1.0, 0.0);
-
-    this.rotation = quat.create();
+    this.right = vec3.create(1.0, 0.0, 0.0);
 
     this.onKeyDown = this.onKeyDown.bind(this);
     this.onKeyUp = this.onKeyUp.bind(this);
@@ -56,6 +57,16 @@ export default class Camera {
     document.addEventListener("mousedown", this.onMouseDown);
     document.addEventListener("mouseup", this.onMouseUp);
     document.addEventListener("mousemove", this.onMouseMove);
+
+    this.div = document.createElement("div");
+    this.div.setAttribute(
+      "style",
+      "position: absolute; top: 10px; left: 10px; width: 200px; color: white; font-size: 16px; font-weight: bold;"
+    );
+    const body = document.querySelector("body");
+    if (body) {
+      body.appendChild(this.div);
+    }
   }
 
   public get view(): Mat4 {
@@ -80,6 +91,7 @@ export default class Camera {
     switch (event.key) {
       case "Alt":
         this.controlled = false;
+        this.div.innerText = "";
         break;
       default:
         break;
@@ -97,15 +109,19 @@ export default class Camera {
     switch (event.button) {
       case 0:
         this.moveMode = MoveMode.TUMBLE;
+        this.div.innerText = `Tumble: Alt + LMB`;
         break;
       case 1:
         this.moveMode = MoveMode.TRACK;
+        this.div.innerText = `Track: Alt + MMB`;
         break;
       case 2:
         this.moveMode = MoveMode.DOLLY;
+        this.div.innerText = `Dolly: Alt + RMB`;
         break;
       default:
         this.moveMode = MoveMode.NONE;
+        this.div.innerText = "";
         break;
     }
   }
@@ -145,35 +161,43 @@ export default class Camera {
   }
 
   private updateCameraRotation(deltaX: number, deltaY: number): void {
+    this.target = vec3.create(0.0, 0.0, 0.0);
+
     this.yaw = -deltaX * this.rotateAmplitude;
     this.pitch = -deltaY * this.rotateAmplitude;
 
     const quatYaw = quat.fromAxisAngle(this.up, utils.degToRad(this.yaw));
 
     const back = vec3.normalize(vec3.sub(this.eye, this.target));
-    const cameraRight = vec3.transformQuat(vec3.cross(this.up, back), quatYaw);
+    this.right = vec3.transformQuat(vec3.cross(this.up, back), quatYaw);
     const quatPitch = quat.fromAxisAngle(
-      cameraRight,
+      this.right,
       utils.degToRad(this.pitch)
     );
 
-    this.rotation = quat.mul(quatYaw, quatPitch);
+    const rotation = quat.mul(quatYaw, quatPitch);
 
-    const newBack = vec3.transformQuat(back, this.rotation);
-    this.up = vec3.normalize(vec3.cross(newBack, cameraRight));
+    const newBack = vec3.transformQuat(back, rotation);
+    this.up = vec3.normalize(vec3.cross(newBack, this.right));
     this.eye = vec3.add(this.target, vec3.mulScalar(newBack, this.distance));
   }
 
   private updateCameraDistance(deltaX: number, deltaY: number): void {
     this.distance -= (deltaX + deltaY) * this.scrollAmplitude;
+    const back = vec3.normalize(vec3.sub(this.eye, this.target));
+    this.eye = vec3.add(this.target, vec3.mulScalar(back, this.distance));
   }
 
   private updateCameraTarget(deltaX: number, deltaY: number) {
-    const panOffset = vec3.transformQuat(
-      vec3.create(-deltaX * this.panAmplitude, deltaY * this.panAmplitude, 0.0),
-      this.rotation
+    let panOffset = vec3.create(0.0, 0.0, 0.0);
+    panOffset = vec3.addScaled(
+      panOffset,
+      this.right,
+      -deltaX * this.panAmplitude
     );
+    panOffset = vec3.addScaled(panOffset, this.up, deltaY * this.panAmplitude);
 
     this.target = vec3.add(this.target, panOffset);
+    this.eye = vec3.add(this.eye, panOffset);
   }
 }
