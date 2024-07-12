@@ -813,7 +813,7 @@ export default class Renderer {
     const lightValues = new Float32Array(
       this.lightUniformBuffer.size / Float32Array.BYTES_PER_ELEMENT
     );
-    const lightDir = vec3.create(0.0, 0.0, -1.0);
+    const lightDir = vec3.normalize(vec3.create(0.0, -0.2, -0.75));
     lightValues.set(lightDir, 0);
     const lightAmbient = vec3.create(0.2, 0.2, 0.2);
     lightValues.set(lightAmbient, 4);
