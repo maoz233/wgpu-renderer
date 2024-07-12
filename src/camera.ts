@@ -13,28 +13,31 @@ export default class Camera {
   private x: number;
   private y: number;
   private rotateAmplitude: number;
+  private panAmplitude: number;
+  private scrollAmplitude: number;
   private pitch: number;
   private yaw: number;
-  private scrollAmplitude: number;
-  private target: Vec3;
   private distance: number;
+  private target: Vec3;
   private eye: Vec3;
-  private panAmplitude: number;
+  private up: Vec3;
   private rotation: Quat;
 
   public constructor() {
     this.controlled = false;
     this.moveMode = MoveMode.NONE;
-    this.rotateAmplitude = 0.1;
+    this.rotateAmplitude = 0.05;
+    this.panAmplitude = 0.01;
+    this.scrollAmplitude = 0.01;
     this.x = 0;
     this.y = 0;
     this.pitch = 0.0;
     this.yaw = 0.0;
-    this.scrollAmplitude = 0.01;
-    this.target = vec3.create(0.0, 0.0, 0.0);
     this.distance = 10.0;
+    this.target = vec3.create(0.0, 0.0, 0.0);
     this.eye = vec3.create(0.0, 0.0, 10.0);
-    this.panAmplitude = 0.01;
+    this.up = vec3.create(0.0, 1.0, 0.0);
+
     this.rotation = quat.create();
 
     this.onKeyDown = this.onKeyDown.bind(this);
@@ -56,12 +59,7 @@ export default class Camera {
   }
 
   public get view(): Mat4 {
-    const direction = vec3.normalize(
-      vec3.transformQuat(vec3.create(0.0, 0.0, 1.0), this.rotation)
-    );
-    this.eye = vec3.add(this.target, vec3.mulScalar(direction, this.distance));
-
-    return mat4.lookAt(this.eye, this.target, vec3.create(0.0, 1.0, 0.0));
+    return mat4.lookAt(this.eye, this.target, this.up);
   }
 
   public get position(): Vec3 {
@@ -147,19 +145,23 @@ export default class Camera {
   }
 
   private updateCameraRotation(deltaX: number, deltaY: number): void {
-    this.yaw -= deltaX * this.rotateAmplitude;
-    this.pitch -= deltaY * this.rotateAmplitude;
+    this.yaw = -deltaX * this.rotateAmplitude;
+    this.pitch = -deltaY * this.rotateAmplitude;
 
-    const quatYaw = quat.fromAxisAngle(
-      vec3.create(0.0, 1.0, 0.0),
-      utils.degToRad(this.yaw)
-    );
+    const quatYaw = quat.fromAxisAngle(this.up, utils.degToRad(this.yaw));
+
+    const back = vec3.normalize(vec3.sub(this.eye, this.target));
+    const cameraRight = vec3.transformQuat(vec3.cross(this.up, back), quatYaw);
     const quatPitch = quat.fromAxisAngle(
-      vec3.create(1.0, 0.0, 0.0),
+      cameraRight,
       utils.degToRad(this.pitch)
     );
 
     this.rotation = quat.mul(quatYaw, quatPitch);
+
+    const newBack = vec3.transformQuat(back, this.rotation);
+    this.up = vec3.normalize(vec3.cross(newBack, cameraRight));
+    this.eye = vec3.add(this.target, vec3.mulScalar(newBack, this.distance));
   }
 
   private updateCameraDistance(deltaX: number, deltaY: number): void {
