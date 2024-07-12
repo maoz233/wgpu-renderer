@@ -7,7 +7,8 @@ struct VertexInput {
 struct VertexOut {
   @builtin(position) position : vec4f,
   @location(0) texCoord : vec2f,
-  @location(1) normal : vec3f
+  @location(1) normal : vec3f,
+  @location(2) pos: vec3f,
 };
 
 struct Transform {
@@ -37,6 +38,7 @@ fn vs_main(vertData: VertexInput) -> VertexOut {
   output.position = transform.mvp * vec4f(vertData.position, 1.0);
   output.texCoord = vertData.texCoord;
   output.normal = (transform.normal * vec4f(vertData.normal, 0.0)).xyz;
+  output.pos = vertData.position;
 
   return output;
 }
@@ -53,8 +55,8 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   var diffuse = light.diffuse * diff * textureSample(materialDiffuse, mySampler, fragData.texCoord).rgb;
 
   // specular
-  var viewDir = normalize(viewPos - fragData.position.xyz);
-  var reflectDir = reflect(-lightDir, normal);  
+  var viewDir = normalize(viewPos - fragData.pos);
+  var reflectDir = reflect(light.direction, normal);
   var spec = pow(max(dot(viewDir, reflectDir), 0.0), materialShininess);
   var specular = light.specular * spec * textureSample(materialSpecular, mySampler, fragData.texCoord).rgb;  
 
