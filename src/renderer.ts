@@ -651,11 +651,6 @@ export default class Renderer {
     const context = this;
 
     return function generateMipmaps(device: GPUDevice, texture: GPUTexture) {
-      console.log(
-        texture.format,
-        texture.dimension,
-        texture.depthOrArrayLayers
-      );
       if (!module) {
         module = device.createShaderModule({
           label: "GPU Shader Module: Mipmap Generation",
