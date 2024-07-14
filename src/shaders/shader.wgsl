@@ -29,7 +29,7 @@ struct Light {
 @group(1) @binding(0) var materialDiffuse: texture_2d<f32>;
 @group(1) @binding(1) var materialSpecular: texture_2d<f32>;
 @group(1) @binding(2) var<uniform> materialShininess: f32;
-@group(2) @binding(0) var mySampler: sampler;
+@group(2) @binding(0) var materialSampler: sampler;
 
 @vertex
 fn vs_main(vertData: VertexInput) -> VertexOut {
@@ -46,19 +46,19 @@ fn vs_main(vertData: VertexInput) -> VertexOut {
 @fragment
 fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   // ambient
-  var ambient = light.ambient * textureSample(materialDiffuse, mySampler, fragData.texCoord).rgb;
+  var ambient = light.ambient * textureSample(materialDiffuse, materialSampler, fragData.texCoord).rgb;
 
   // diffuse
   var normal = normalize(fragData.normal);
   var lightDir = normalize(-light.direction);
   var diff = max(dot(normal, lightDir), 0.0);
-  var diffuse = light.diffuse * diff * textureSample(materialDiffuse, mySampler, fragData.texCoord).rgb;
+  var diffuse = light.diffuse * diff * textureSample(materialDiffuse, materialSampler, fragData.texCoord).rgb;
 
   // specular
   var viewDir = normalize(viewPos - fragData.pos);
   var reflectDir = reflect(light.direction, normal);
   var spec = pow(max(dot(viewDir, reflectDir), 0.0), materialShininess);
-  var specular = light.specular * spec * textureSample(materialSpecular, mySampler, fragData.texCoord).rgb;  
+  var specular = light.specular * spec * textureSample(materialSpecular, materialSampler, fragData.texCoord).rgb;  
 
   var result = ambient + diffuse + specular;
   return vec4f(result, 1.0);
