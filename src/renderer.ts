@@ -365,9 +365,19 @@ export default class Renderer {
   }
 
   private async createTexture(): Promise<void> {
-    const contianerImageBitMap = await loadImageBitmap("images/container.png");
-    const contianerSpecularImageBitMap = await loadImageBitmap(
+    const contianerImageBitmap = await loadImageBitmap("images/container.png");
+    const contianerSpecularImageBitmap = await loadImageBitmap(
       "images/container_specular.png"
+    );
+    const cubeImageBitmaps = await Promise.all(
+      [
+        "images/LeadenhallMarket/pos-x.jpg",
+        "images/LeadenhallMarket/neg-x.jpg",
+        "images/LeadenhallMarket/pos-y.jpg",
+        "images/LeadenhallMarket/neg-y.jpg",
+        "images/LeadenhallMarket/pos-z.jpg",
+        "images/LeadenhallMarket/neg-z.jpg",
+      ].map(loadImageBitmap)
     );
 
     this.materialShininessUniformBuffer = this.createBuffer(
@@ -379,14 +389,14 @@ export default class Renderer {
     for (let i = 0; i < 2; ++i) {
       const contianerMipLevelCount = i
         ? calculateMipLevelCount(
-            contianerImageBitMap.width,
-            contianerImageBitMap.height
+            contianerImageBitmap.width,
+            contianerImageBitmap.height
           )
         : 1;
 
-      const contianerTexture = this.createTextureFromSource(
+      const contianerTexture = this.createTexture2DFromSource(
         `GPU Texture: Contianer ${i}`,
-        contianerImageBitMap,
+        contianerImageBitmap,
         contianerMipLevelCount
       );
 
@@ -396,14 +406,14 @@ export default class Renderer {
 
       const containerSpecularMipLevelCount = i
         ? calculateMipLevelCount(
-            contianerSpecularImageBitMap.width,
-            contianerSpecularImageBitMap.height
+            contianerSpecularImageBitmap.width,
+            contianerSpecularImageBitmap.height
           )
         : 1;
 
-      const contianerSpecularTexture = this.createTextureFromSource(
+      const contianerSpecularTexture = this.createTexture2DFromSource(
         `GPU Texture: Contianer Specular ${i}`,
-        contianerSpecularImageBitMap,
+        contianerSpecularImageBitmap,
         containerSpecularMipLevelCount
       );
 
@@ -411,23 +421,43 @@ export default class Renderer {
         label: `GPU Texture View: Contianer Specular ${i}`,
       });
 
+      const cubeMipLevelCount = i
+        ? calculateMipLevelCount(
+            cubeImageBitmaps[0].width,
+            cubeImageBitmaps[0].height
+          )
+        : 1;
+      const cubeTexture = this.createTextureCubeFromSources(
+        `GPU Texture: Cube ${i}`,
+        cubeImageBitmaps,
+        cubeMipLevelCount
+      );
+      const cubeTextureView = cubeTexture.createView({
+        label: `GPU Texture View: Cube ${i}`,
+        dimension: "cube",
+      });
+
       const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 1: Container, Contianer Specular  ${i}`,
+        label: `GPU Bind Group 1: Container, Contianer Specular, Cube,  ${i}`,
         layout: this.renderPipeline.getBindGroupLayout(1),
         entries: [
           {
             binding: 0,
-            resource: contianerTextureView,
-          },
-          {
-            binding: 1,
-            resource: contianerSpecularTextureView,
-          },
-          {
-            binding: 2,
             resource: {
               buffer: this.materialShininessUniformBuffer,
             },
+          },
+          {
+            binding: 1,
+            resource: contianerTextureView,
+          },
+          {
+            binding: 2,
+            resource: contianerSpecularTextureView,
+          },
+          {
+            binding: 3,
+            resource: cubeTextureView,
           },
         ],
       });
@@ -480,7 +510,7 @@ export default class Renderer {
     return buffer;
   }
 
-  private createTextureFromSource(
+  private createTexture2DFromSource(
     label: string,
     source: GPUImageCopyExternalImageSource,
     mipLevelCount: number
@@ -514,6 +544,43 @@ export default class Renderer {
     return texture;
   }
 
+  private createTextureCubeFromSources(
+    label: string,
+    sources: Array<GPUImageCopyExternalImageSource>,
+    mipLevelCount: number
+  ): GPUTexture {
+    const source = sources[0];
+
+    let width: number;
+    let height: number;
+    if (source instanceof HTMLVideoElement) {
+      width = source.videoWidth;
+      height = source.videoHeight;
+    } else if (source instanceof VideoFrame) {
+      width = source.codedWidth;
+      height = source.codedHeight;
+    } else {
+      width = source.width;
+      height = source.height;
+    }
+    const length = sources.length;
+
+    const texture = this.device.createTexture({
+      label,
+      format: "rgba8unorm",
+      mipLevelCount,
+      size: [width, height, length],
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    this.copySourcesToTexture(this.device, sources, texture);
+
+    return texture;
+  }
+
   private copySourceToTexture(
     device: GPUDevice,
     source: GPUImageCopyExternalImageSource,
@@ -543,6 +610,39 @@ export default class Renderer {
     }
   }
 
+  private copySourcesToTexture(
+    device: GPUDevice,
+    sources: Array<GPUImageCopyExternalImageSource>,
+    texture: GPUTexture
+  ): void {
+    sources.forEach(
+      (source: GPUImageCopyExternalImageSource, layer: number) => {
+        let width: number;
+        let height: number;
+        if (source instanceof HTMLVideoElement) {
+          width = source.videoWidth;
+          height = source.videoHeight;
+        } else if (source instanceof VideoFrame) {
+          width = source.codedWidth;
+          height = source.codedHeight;
+        } else {
+          width = source.width;
+          height = source.height;
+        }
+
+        device.queue.copyExternalImageToTexture(
+          { source },
+          { texture, origin: [0, 0, layer] },
+          { width, height }
+        );
+      }
+    );
+
+    if (texture.mipLevelCount > 1) {
+      this.generateMipmaps()(device, texture);
+    }
+  }
+
   private generateMipmaps(): (d: GPUDevice, t: GPUTexture) => void {
     let sampler: GPUSampler;
     let module: GPUShaderModule;
@@ -551,6 +651,11 @@ export default class Renderer {
     const context = this;
 
     return function generateMipmaps(device: GPUDevice, texture: GPUTexture) {
+      console.log(
+        texture.format,
+        texture.dimension,
+        texture.depthOrArrayLayers
+      );
       if (!module) {
         module = device.createShaderModule({
           label: "GPU Shader Module: Mipmap Generation",
@@ -656,43 +761,107 @@ export default class Renderer {
         width = Math.max(1, (width / 2) | 0);
         height = Math.max(1, (height / 2) | 0);
 
-        const bindGroup = device.createBindGroup({
-          label: "GPU Bind Group: Mipmap Generation",
-          layout: pipeline.getBindGroupLayout(0),
-          entries: [
+        if (1 == texture.depthOrArrayLayers) {
+          const bindGroup = device.createBindGroup({
+            label: "GPU Bind Group: Mipmap Generation",
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+              {
+                binding: 0,
+                resource: sampler,
+              },
+              {
+                binding: 1,
+                resource: texture.createView({
+                  label: "GPU Texture View: Mipmap Generation",
+                  baseMipLevel,
+                  mipLevelCount: 1,
+                }),
+              },
+            ],
+          });
+
+          ++baseMipLevel;
+
+          const colorAttachments: GPURenderPassColorAttachment[] = [
             {
-              binding: 0,
-              resource: sampler,
+              view: texture.createView({
+                label: "GPU Texture View: Mipmap Generation Render Target",
+                baseMipLevel,
+                mipLevelCount: 1,
+              }),
+              loadOp: "clear",
+              storeOp: "store",
             },
-            {
-              binding: 1,
-              resource: texture.createView({ baseMipLevel, mipLevelCount: 1 }),
-            },
-          ],
-        });
+          ];
 
-        ++baseMipLevel;
+          const passDescriptor: GPURenderPassDescriptor = {
+            label: "GPU Render Pass Descriptor: Mipmap Generation",
+            colorAttachments,
+          };
 
-        const colorAttachments: GPURenderPassColorAttachment[] = [
-          {
-            view: texture.createView({ baseMipLevel, mipLevelCount: 1 }),
-            loadOp: "clear",
-            storeOp: "store",
-          },
-        ];
+          const pass = encoder.beginRenderPass(passDescriptor);
+          pass.setPipeline(pipeline);
+          pass.setVertexBuffer(0, vertexBuffer);
+          pass.setIndexBuffer(indexBuffer, "uint32");
+          pass.setBindGroup(0, bindGroup);
+          pass.drawIndexed(6);
+          pass.end();
+        } else if (6 == texture.depthOrArrayLayers) {
+          for (let layer = 0; layer < texture.depthOrArrayLayers; ++layer) {
+            const bindGroup = device.createBindGroup({
+              label: "GPU Bind Group: Mipmap Generation",
+              layout: pipeline.getBindGroupLayout(0),
+              entries: [
+                {
+                  binding: 0,
+                  resource: sampler,
+                },
+                {
+                  binding: 1,
+                  resource: texture.createView({
+                    label: "GPU Texture View: Mipmap Generation",
+                    dimension: "2d",
+                    baseMipLevel,
+                    mipLevelCount: 1,
+                    baseArrayLayer: layer,
+                    arrayLayerCount: 1,
+                  }),
+                },
+              ],
+            });
 
-        const passDescriptor: GPURenderPassDescriptor = {
-          label: "GPU Render Pass Descriptor: Mipmap Generation",
-          colorAttachments,
-        };
+            const colorAttachments: GPURenderPassColorAttachment[] = [
+              {
+                view: texture.createView({
+                  label: "GPU Texture View: Mipmap Generation Render Target",
+                  dimension: "2d",
+                  baseMipLevel: baseMipLevel + 1,
+                  mipLevelCount: 1,
+                  baseArrayLayer: layer,
+                  arrayLayerCount: 1,
+                }),
+                loadOp: "clear",
+                storeOp: "store",
+              },
+            ];
 
-        const pass = encoder.beginRenderPass(passDescriptor);
-        pass.setPipeline(pipeline);
-        pass.setVertexBuffer(0, vertexBuffer);
-        pass.setIndexBuffer(indexBuffer, "uint32");
-        pass.setBindGroup(0, bindGroup);
-        pass.drawIndexed(6);
-        pass.end();
+            const passDescriptor: GPURenderPassDescriptor = {
+              label: "GPU Render Pass Descriptor: Mipmap Generation",
+              colorAttachments,
+            };
+
+            const pass = encoder.beginRenderPass(passDescriptor);
+            pass.setPipeline(pipeline);
+            pass.setVertexBuffer(0, vertexBuffer);
+            pass.setIndexBuffer(indexBuffer, "uint32");
+            pass.setBindGroup(0, bindGroup);
+            pass.drawIndexed(6);
+            pass.end();
+          }
+
+          ++baseMipLevel;
+        }
       }
 
       device.queue.submit([encoder.finish()]);

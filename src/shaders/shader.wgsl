@@ -26,9 +26,10 @@ struct Light {
 @group(0) @binding(0) var<uniform> transform: Transform;
 @group(0) @binding(1) var<uniform> viewPos: vec3f;
 @group(0) @binding(2) var<uniform> light: Light;
-@group(1) @binding(0) var materialDiffuse: texture_2d<f32>;
-@group(1) @binding(1) var materialSpecular: texture_2d<f32>;
-@group(1) @binding(2) var<uniform> materialShininess: f32;
+@group(1) @binding(0) var<uniform> materialShininess: f32;
+@group(1) @binding(1) var materialDiffuse: texture_2d<f32>;
+@group(1) @binding(2) var materialSpecular: texture_2d<f32>;
+@group(1) @binding(3) var materialCube: texture_cube<f32>;
 @group(2) @binding(0) var materialSampler: sampler;
 
 @vertex
@@ -61,5 +62,8 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   var specular = light.specular * spec * textureSample(materialSpecular, materialSampler, fragData.texCoord).rgb;  
 
   var result = ambient + diffuse + specular;
+
+  result = textureSample(materialCube, materialSampler, fragData.pos).rgb;
+
   return vec4f(result, 1.0);
 }
