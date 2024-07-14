@@ -25,11 +25,13 @@ export default class Renderer {
   private resultBuffer: GPUBuffer;
   private canvas: HTMLCanvasElement;
   private context: GPUCanvasContext;
-  private depthTexture: GPUTexture;
-  private depthTextureView: GPUTextureView;
   private presentationFormat: GPUTextureFormat;
+  private multisamplingTexture: GPUTexture;
+  private multisamplingTextureView: GPUTextureView;
+  private depthTextures: Array<GPUTexture>;
+  private depthTextureViews: Array<GPUTextureView>;
 
-  private renderPipeline: GPURenderPipeline;
+  private renderPipelines: Array<GPURenderPipeline>;
   private vertexBuffer: GPUBuffer;
   private indexBuffer: GPUBuffer;
   private bindGroups: Array<Array<GPUBindGroup>>;
@@ -38,8 +40,8 @@ export default class Renderer {
   private lightUniformBuffer: GPUBuffer;
   private materialShininessUniformBuffer: GPUBuffer;
 
-  private skyboxRenderPipeline: GPURenderPipeline;
-  private skyboxBindGroup: GPUBindGroup;
+  private skyboxRenderPipelines: Array<GPURenderPipeline>;
+  private skyboxBindGroups: Array<GPUBindGroup>;
   private skyboxUniformBuffer: GPUBuffer;
 
   private current: number;
@@ -52,15 +54,23 @@ export default class Renderer {
   private addressModeVController: GUIController;
   private magFilterController: GUIController;
   private minFilterController: GUIController;
+  private msaaController: GUIController;
 
   public constructor() {
     this.camera = new Camera();
 
+    this.depthTextures = new Array<GPUTexture>(2);
+    this.depthTextureViews = new Array<GPUTextureView>(2);
+
+    this.renderPipelines = new Array<GPURenderPipeline>(2);
     this.bindGroups = new Array<Array<GPUBindGroup>>(
       new Array<GPUBindGroup>(),
       new Array<GPUBindGroup>(),
       new Array<GPUBindGroup>()
     );
+
+    this.skyboxRenderPipelines = new Array<GPURenderPipeline>(2);
+    this.skyboxBindGroups = new Array<GPUBindGroup>(2);
 
     this.current = 0;
 
@@ -78,7 +88,8 @@ export default class Renderer {
     await this.requestDevice();
     this.getCanvas();
     this.configContext();
-    this.createDepthTexture();
+    this.createMultisamplingTexture();
+    this.createDepthTextures();
 
     this.createRenderPipeline();
     this.createVertexBuffer();
@@ -167,8 +178,13 @@ export default class Renderer {
           1,
           Math.min(height, this.device.limits.maxTextureDimension2D)
         );
-        this.depthTexture.destroy();
-        this.createDepthTexture();
+
+        let sampleCount = 4;
+        if (this.msaaController) {
+          sampleCount = this.msaaController.getValue();
+        }
+        this.createMultisamplingTexture();
+        this.createDepthTextures();
       }
     });
     observer.observe(this.canvas);
@@ -189,17 +205,42 @@ export default class Renderer {
     });
   }
 
-  private async createDepthTexture(): Promise<void> {
-    this.depthTexture = this.device.createTexture({
-      label: "GPU Texture: Depth Texture",
+  private createMultisamplingTexture(): void {
+    if (this.multisamplingTexture) {
+      this.multisamplingTexture.destroy();
+    }
+
+    this.multisamplingTexture = this.device.createTexture({
+      label: "GPU Texture: Multisampling Texture",
       size: [this.canvas.width, this.canvas.height],
-      format: "depth24plus",
+      format: this.presentationFormat,
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      sampleCount: 4,
     });
 
-    this.depthTextureView = this.depthTexture.createView({
-      label: "GPU Texture View: Depth Texture View",
+    this.multisamplingTextureView = this.multisamplingTexture.createView({
+      label: "GPU Texture View: Multisampling Texture View",
     });
+  }
+
+  private createDepthTextures(): void {
+    for (let i = 0; i < 2; ++i) {
+      if (this.depthTextures[i]) {
+        this.depthTextures[i].destroy();
+      }
+
+      this.depthTextures[i] = this.device.createTexture({
+        label: `GPU Texture: Depth Texture ${i && "with MSAA"}`,
+        size: [this.canvas.width, this.canvas.height],
+        format: "depth24plus",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        sampleCount: i ? 4 : 1,
+      });
+
+      this.depthTextureViews[i] = this.depthTextures[i].createView({
+        label: `GPU Texture View: Depth Texture View ${i && "with MSAA"}`,
+      });
+    }
   }
 
   private createRenderPipeline(): void {
@@ -208,7 +249,7 @@ export default class Renderer {
       shaderCode
     );
 
-    this.renderPipeline = this.device.createRenderPipeline({
+    const renderPipelineDescriptor: GPURenderPipelineDescriptor = {
       label: "GPU Render Pipeline",
       layout: "auto",
       vertex: {
@@ -247,6 +288,9 @@ export default class Renderer {
         depthWriteEnabled: true,
         depthCompare: "less",
       },
+      multisample: {
+        count: 1,
+      },
       fragment: {
         module: shaderModule,
         entryPoint: "fs_main",
@@ -256,7 +300,18 @@ export default class Renderer {
           },
         ],
       },
-    });
+    };
+
+    for (let i = 0; i < 2; ++i) {
+      if (i) {
+        renderPipelineDescriptor.label = "GPU Render Pipeline with MSAA";
+        renderPipelineDescriptor.multisample.count = 4;
+      }
+
+      this.renderPipelines[i] = this.device.createRenderPipeline(
+        renderPipelineDescriptor
+      );
+    }
   }
 
   private createVertexBuffer(): void {
@@ -348,31 +403,35 @@ export default class Renderer {
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
 
-    const bindGroup = this.device.createBindGroup({
-      label: `GPU Bind Group 0: Transform, View Position, Light`,
-      layout: this.renderPipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: this.transformUniformBuffer,
+    for (let i = 0; i < 2; ++i) {
+      const bindGroup = this.device.createBindGroup({
+        label: `GPU Bind Group 0: Transform, View Position, Light ${
+          i && "with MSAA"
+        }`,
+        layout: this.renderPipelines[i].getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: {
+              buffer: this.transformUniformBuffer,
+            },
           },
-        },
-        {
-          binding: 1,
-          resource: {
-            buffer: this.viewPositionUniformBuffer,
+          {
+            binding: 1,
+            resource: {
+              buffer: this.viewPositionUniformBuffer,
+            },
           },
-        },
-        {
-          binding: 2,
-          resource: {
-            buffer: this.lightUniformBuffer,
+          {
+            binding: 2,
+            resource: {
+              buffer: this.lightUniformBuffer,
+            },
           },
-        },
-      ],
-    });
-    this.bindGroups[0].push(bindGroup);
+        ],
+      });
+      this.bindGroups[0].push(bindGroup);
+    }
   }
 
   private async createTexture(): Promise<void> {
@@ -448,31 +507,35 @@ export default class Renderer {
         dimension: "cube",
       });
 
-      const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 1: Container, Contianer Specular, Cube,  ${i}`,
-        layout: this.renderPipeline.getBindGroupLayout(1),
-        entries: [
-          {
-            binding: 0,
-            resource: {
-              buffer: this.materialShininessUniformBuffer,
+      for (let j = 0; j < 2; ++j) {
+        const bindGroup = this.device.createBindGroup({
+          label: `GPU Bind Group 1: Container, Contianer Specular, Cube, ${i}, ${
+            j && "with MSAA"
+          }`,
+          layout: this.renderPipelines[j].getBindGroupLayout(1),
+          entries: [
+            {
+              binding: 0,
+              resource: {
+                buffer: this.materialShininessUniformBuffer,
+              },
             },
-          },
-          {
-            binding: 1,
-            resource: contianerTextureView,
-          },
-          {
-            binding: 2,
-            resource: contianerSpecularTextureView,
-          },
-          {
-            binding: 3,
-            resource: cubeTextureView,
-          },
-        ],
-      });
-      this.bindGroups[1].push(bindGroup);
+            {
+              binding: 1,
+              resource: contianerTextureView,
+            },
+            {
+              binding: 2,
+              resource: contianerSpecularTextureView,
+            },
+            {
+              binding: 3,
+              resource: cubeTextureView,
+            },
+          ],
+        });
+        this.bindGroups[1].push(bindGroup);
+      }
     }
 
     for (let i = 0; i < 16; ++i) {
@@ -484,17 +547,19 @@ export default class Renderer {
         minFilter: i & 8 ? "linear" : "nearest",
       });
 
-      const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 2: Sampler ${i}`,
-        layout: this.renderPipeline.getBindGroupLayout(2),
-        entries: [
-          {
-            binding: 0,
-            resource: sampler,
-          },
-        ],
-      });
-      this.bindGroups[2].push(bindGroup);
+      for (let j = 0; j < 2; ++j) {
+        const bindGroup = this.device.createBindGroup({
+          label: `GPU Bind Group 2 : Sampler ${i}, ${j && "with MSAA"}`,
+          layout: this.renderPipelines[j].getBindGroupLayout(2),
+          entries: [
+            {
+              binding: 0,
+              resource: sampler,
+            },
+          ],
+        });
+        this.bindGroups[2].push(bindGroup);
+      }
     }
   }
 
@@ -504,8 +569,8 @@ export default class Renderer {
       skyboxShaderCode
     );
 
-    this.skyboxRenderPipeline = this.device.createRenderPipeline({
-      label: "GPU Render Pipeline: Skybox",
+    const skyboxRenderPipelineDescriptor: GPURenderPipelineDescriptor = {
+      label: `GPU Render Pipeline: Skybox`,
       layout: "auto",
       vertex: {
         module: skyboxShaderModule,
@@ -516,6 +581,9 @@ export default class Renderer {
         depthWriteEnabled: true,
         depthCompare: "less-equal",
       },
+      multisample: {
+        count: 1,
+      },
       fragment: {
         module: skyboxShaderModule,
         entryPoint: "fs_main",
@@ -525,7 +593,18 @@ export default class Renderer {
           },
         ],
       },
-    });
+    };
+
+    for (let i = 0; i < 2; ++i) {
+      if (i) {
+        skyboxRenderPipelineDescriptor.label = "GPU Render Pipeline with MSAA";
+        skyboxRenderPipelineDescriptor.multisample.count = 4;
+      }
+
+      this.skyboxRenderPipelines[i] = this.device.createRenderPipeline(
+        skyboxRenderPipelineDescriptor
+      );
+    }
   }
 
   private async createSkyboxUniformBuffer(): Promise<void> {
@@ -566,26 +645,28 @@ export default class Renderer {
       dimension: "cube",
     });
 
-    this.skyboxBindGroup = this.device.createBindGroup({
-      label: `GPU Bind Group: Skybox`,
-      layout: this.skyboxRenderPipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: this.skyboxUniformBuffer,
+    for (let i = 0; i < 2; ++i) {
+      this.skyboxBindGroups[i] = this.device.createBindGroup({
+        label: `GPU Bind Group: Skybox ${i && "with MSAA"}`,
+        layout: this.skyboxRenderPipelines[i].getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: {
+              buffer: this.skyboxUniformBuffer,
+            },
           },
-        },
-        {
-          binding: 1,
-          resource: skyboxTextureView,
-        },
-        {
-          binding: 2,
-          resource: skyboxSampler,
-        },
-      ],
-    });
+          {
+            binding: 1,
+            resource: skyboxTextureView,
+          },
+          {
+            binding: 2,
+            resource: skyboxSampler,
+          },
+        ],
+      });
+    }
   }
 
   private createShaderModule(label: string, code: string): GPUShaderModule {
@@ -1017,6 +1098,17 @@ export default class Renderer {
       .add(textureOptions, "minFilter")
       .options(["linear", "nearest"])
       .name("minFilter");
+
+    // multisampling anti-aliasing GUI
+    const msaaOptions = {
+      enable: false,
+    };
+
+    const antiAliasingGUI = gui.addFolder("Multisampling Anti-Aliasing (MSAA)");
+    antiAliasingGUI.closed = false;
+    this.msaaController = antiAliasingGUI
+      .add(msaaOptions, "enable")
+      .name("Enable");
   }
 
   private run(): void {
@@ -1138,23 +1230,31 @@ export default class Renderer {
       label: "GPU Command Encoder: Draw Frame",
     });
 
-    const renderTargetTextureView = this.context
-      .getCurrentTexture()
-      .createView({ label: "GPU Texture View: Canvas Texture View" });
+    const canvasTexture = this.context.getCurrentTexture();
+    const canvasTextureView = canvasTexture.createView({
+      label: "GPU Texture View: Canvas Texture View",
+    });
+
     const colorAttachments: GPURenderPassColorAttachment[] = [
       {
-        view: renderTargetTextureView,
+        view: canvasTextureView,
         clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
         loadOp: "clear",
         storeOp: "store",
       },
     ];
+    if (this.msaaController.getValue()) {
+      colorAttachments[0].view = this.multisamplingTextureView;
+      colorAttachments[0].resolveTarget = canvasTextureView;
+    }
 
+    // msaa index
+    const msaaIndex = this.msaaController.getValue() ? 1 : 0;
     const renderPassDescriptor: GPURenderPassDescriptor = {
       label: "GPU Renderpass Descriptor: Draw Frame",
       colorAttachments,
       depthStencilAttachment: {
-        view: this.depthTextureView,
+        view: this.depthTextureViews[msaaIndex],
         depthClearValue: 1.0,
         depthLoadOp: "clear",
         depthStoreOp: "store",
@@ -1170,16 +1270,22 @@ export default class Renderer {
     }
 
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
-    passEncoder.setPipeline(this.renderPipeline);
+    passEncoder.setPipeline(this.renderPipelines[msaaIndex]);
     passEncoder.setVertexBuffer(0, this.vertexBuffer);
     passEncoder.setIndexBuffer(this.indexBuffer, "uint32");
-    passEncoder.setBindGroup(0, this.bindGroups[0][0]);
-    passEncoder.setBindGroup(1, this.bindGroups[1][textureIndex]);
-    passEncoder.setBindGroup(2, this.bindGroups[2][samplerIndex]);
+    passEncoder.setBindGroup(0, this.bindGroups[0][msaaIndex]);
+    passEncoder.setBindGroup(
+      1,
+      this.bindGroups[1][textureIndex * 2 + msaaIndex]
+    );
+    passEncoder.setBindGroup(
+      2,
+      this.bindGroups[2][samplerIndex * 2 + msaaIndex]
+    );
     passEncoder.drawIndexed(36);
 
-    passEncoder.setPipeline(this.skyboxRenderPipeline);
-    passEncoder.setBindGroup(0, this.skyboxBindGroup);
+    passEncoder.setPipeline(this.skyboxRenderPipelines[msaaIndex]);
+    passEncoder.setBindGroup(0, this.skyboxBindGroups[msaaIndex]);
     passEncoder.draw(3);
 
     passEncoder.end();
