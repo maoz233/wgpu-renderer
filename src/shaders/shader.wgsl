@@ -12,8 +12,10 @@ struct VertexOut {
 };
 
 struct Transform {
+  model: mat4x4f,
   normal: mat4x4f,
-  mvp: mat4x4f,
+  view: mat4x4f,
+  projection: mat4x4f,
 };
 
 struct Light {
@@ -36,10 +38,10 @@ struct Light {
 fn vs_main(vertData: VertexInput) -> VertexOut {
   var output: VertexOut;
 
-  output.position = transform.mvp * vec4f(vertData.position, 1.0);
+  output.position = transform.projection * transform.view * transform.model * vec4f(vertData.position, 1.0);
   output.texCoord = vertData.texCoord;
   output.normal = (transform.normal * vec4f(vertData.normal, 0.0)).xyz;
-  output.pos = vertData.position;
+  output.pos = (transform.normal * vec4f(vertData.position, 0.0)).xyz;
 
   return output;
 }
@@ -63,7 +65,9 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
 
   var result = ambient + diffuse + specular;
 
-  result = textureSample(materialCube, materialSampler, fragData.pos).rgb;
+  viewDir = normalize(fragData.pos -viewPos);
+  reflectDir = reflect(viewDir, normal);
+  result = textureSample(materialCube, materialSampler, reflectDir * vec3f(1, 1, -1)).rgb;
 
   return vec4f(result, 1.0);
 }

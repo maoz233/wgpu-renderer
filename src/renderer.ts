@@ -321,7 +321,7 @@ export default class Renderer {
   private createUniformBuffer(): void {
     this.transformUniformBuffer = this.createBuffer(
       `GPU Uniform Buffer: Transform`,
-      (4 * 4 + 4 * 4) * Float32Array.BYTES_PER_ELEMENT,
+      (4 * 4 + 4 * 4 + 4 * 4 + 4 * 4) * Float32Array.BYTES_PER_ELEMENT,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
 
@@ -936,13 +936,15 @@ export default class Renderer {
 
     // model matrix
     const model = mat4.identity();
+    transformValues.set(model, 0);
 
     // noraml matrix
     const normal = mat4.transpose(mat4.inverse(model));
-    transformValues.set(normal, 0);
+    transformValues.set(normal, model.length);
 
     // view matrix
     const view = this.camera.view;
+    transformValues.set(view, model.length + normal.length);
 
     // projection matrix
     const aspect = this.canvas.width / this.canvas.height;
@@ -953,8 +955,7 @@ export default class Renderer {
       100.0
     );
 
-    const mvp = mat4.mul(projection, mat4.mul(view, model));
-    transformValues.set(mvp, normal.length);
+    transformValues.set(projection, model.length + normal.length + view.length);
 
     this.device.queue.writeBuffer(
       this.transformUniformBuffer,
