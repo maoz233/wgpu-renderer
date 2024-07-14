@@ -1,6 +1,7 @@
 import shaderCode from "@/shaders/shader.wgsl";
 import mipmapShaderCode from "@/shaders/mipmap.wgsl";
-import { mat4, utils, vec3, vec4 } from "wgpu-matrix";
+import skyboxShaderCode from "@/shaders/skybox.wgsl";
+import { mat4, utils, vec3 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import {
   loadImageBitmap,
@@ -27,6 +28,7 @@ export default class Renderer {
   private depthTexture: GPUTexture;
   private depthTextureView: GPUTextureView;
   private presentationFormat: GPUTextureFormat;
+
   private renderPipeline: GPURenderPipeline;
   private vertexBuffer: GPUBuffer;
   private indexBuffer: GPUBuffer;
@@ -35,6 +37,10 @@ export default class Renderer {
   private viewPositionUniformBuffer: GPUBuffer;
   private lightUniformBuffer: GPUBuffer;
   private materialShininessUniformBuffer: GPUBuffer;
+
+  private skyboxRenderPipeline: GPURenderPipeline;
+  private skyboxBindGroup: GPUBindGroup;
+  private skyboxUniformBuffer: GPUBuffer;
 
   private current: number;
 
@@ -73,11 +79,16 @@ export default class Renderer {
     this.getCanvas();
     this.configContext();
     this.createDepthTexture();
+
     this.createRenderPipeline();
     this.createVertexBuffer();
     this.createIndexBuffer();
     this.createUniformBuffer();
     await this.createTexture();
+
+    this.createSkyboxRenderPipeline();
+    await this.createSkyboxUniformBuffer();
+
     this.initGUI();
   }
 
@@ -485,6 +496,96 @@ export default class Renderer {
       });
       this.bindGroups[2].push(bindGroup);
     }
+  }
+
+  private createSkyboxRenderPipeline(): void {
+    const skyboxShaderModule = this.createShaderModule(
+      "GPU Shader Module: Skybox",
+      skyboxShaderCode
+    );
+
+    this.skyboxRenderPipeline = this.device.createRenderPipeline({
+      label: "GPU Render Pipeline: Skybox",
+      layout: "auto",
+      vertex: {
+        module: skyboxShaderModule,
+        entryPoint: "vs_main",
+      },
+      depthStencil: {
+        format: "depth24plus",
+        depthWriteEnabled: true,
+        depthCompare: "less-equal",
+      },
+      fragment: {
+        module: skyboxShaderModule,
+        entryPoint: "fs_main",
+        targets: [
+          {
+            format: this.presentationFormat,
+          },
+        ],
+      },
+    });
+  }
+
+  private async createSkyboxUniformBuffer(): Promise<void> {
+    this.skyboxUniformBuffer = this.createBuffer(
+      `GPU Uniform Buffer: Skybox`,
+      4 * 4 * Float32Array.BYTES_PER_ELEMENT,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    );
+
+    const skyboxSampler = this.device.createSampler({
+      magFilter: "linear",
+      minFilter: "linear",
+      mipmapFilter: "linear",
+    });
+
+    const skyboxImageBitmaps = await Promise.all(
+      [
+        "images/LeadenhallMarket/pos-x.jpg",
+        "images/LeadenhallMarket/neg-x.jpg",
+        "images/LeadenhallMarket/pos-y.jpg",
+        "images/LeadenhallMarket/neg-y.jpg",
+        "images/LeadenhallMarket/pos-z.jpg",
+        "images/LeadenhallMarket/neg-z.jpg",
+      ].map(loadImageBitmap)
+    );
+
+    const skyboxMipLevelCount = calculateMipLevelCount(
+      skyboxImageBitmaps[0].width,
+      skyboxImageBitmaps[0].height
+    );
+    const skyboxTexture = this.createTextureCubeFromSources(
+      `GPU Texture: Skybox`,
+      skyboxImageBitmaps,
+      skyboxMipLevelCount
+    );
+    const skyboxTextureView = skyboxTexture.createView({
+      label: `GPU Texture View: Skybox`,
+      dimension: "cube",
+    });
+
+    this.skyboxBindGroup = this.device.createBindGroup({
+      label: `GPU Bind Group: Skybox`,
+      layout: this.skyboxRenderPipeline.getBindGroupLayout(0),
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.skyboxUniformBuffer,
+          },
+        },
+        {
+          binding: 1,
+          resource: skyboxTextureView,
+        },
+        {
+          binding: 2,
+          resource: skyboxSampler,
+        },
+      ],
+    });
   }
 
   private createShaderModule(label: string, code: string): GPUShaderModule {
@@ -965,6 +1066,20 @@ export default class Renderer {
       transformValues.byteLength
     );
 
+    // skybox uniform buffer values
+    const skyboxValues = new Float32Array(
+      this.skyboxUniformBuffer.size / Float32Array.BYTES_PER_ELEMENT
+    );
+    skyboxValues.set(mat4.inverse(mat4.mul(projection, view)), 0);
+
+    this.device.queue.writeBuffer(
+      this.skyboxUniformBuffer,
+      0,
+      skyboxValues.buffer,
+      skyboxValues.byteOffset,
+      skyboxValues.byteLength
+    );
+
     // camera position
     this.device.queue.writeBuffer(
       this.viewPositionUniformBuffer,
@@ -1062,6 +1177,10 @@ export default class Renderer {
     passEncoder.setBindGroup(1, this.bindGroups[1][textureIndex]);
     passEncoder.setBindGroup(2, this.bindGroups[2][samplerIndex]);
     passEncoder.drawIndexed(36);
+
+    passEncoder.setPipeline(this.skyboxRenderPipeline);
+    passEncoder.setBindGroup(0, this.skyboxBindGroup);
+    passEncoder.draw(3);
 
     passEncoder.end();
 

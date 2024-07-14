@@ -1,0 +1,28 @@
+struct VertexOut {
+  @builtin(position) position : vec4f,
+  @location(0) pos: vec4f,
+};
+
+
+@group(0) @binding(0) var<uniform> matrix: mat4x4f;
+@group(0) @binding(1) var cubeTexture: texture_cube<f32>;
+@group(0) @binding(2) var cubeSampler: sampler;
+
+@vertex
+fn vs_main(@builtin(vertex_index)  vertexIndex: u32) -> VertexOut {
+  var positions = array(vec2f(-1, 3), vec2f(-1,-1), vec2f(3, -1));
+
+  var output: VertexOut;
+
+  output.position = vec4f(positions[vertexIndex], 1.0, 1.0);
+  output.pos = output.position;
+
+  return output;
+}
+
+@fragment
+fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
+  var texCoord = matrix * fragData.pos;
+
+  return textureSample(cubeTexture, cubeSampler, normalize(texCoord.xyz / texCoord.w) * vec3f(1, 1, -1));
+}
