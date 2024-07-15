@@ -41,7 +41,7 @@ export default class Renderer {
   private materialShininessUniformBuffer: GPUBuffer;
 
   private skyboxRenderPipelines: Array<GPURenderPipeline>;
-  private skyboxBindGroups: Array<GPUBindGroup>;
+  private skyboxBindGroups: Array<Array<GPUBindGroup>>;
   private skyboxUniformBuffer: GPUBuffer;
 
   private current: number;
@@ -55,6 +55,7 @@ export default class Renderer {
   private magFilterController: GUIController;
   private minFilterController: GUIController;
   private msaaController: GUIController;
+  private skyboxController: GUIController;
 
   public constructor() {
     this.camera = new Camera();
@@ -66,11 +67,16 @@ export default class Renderer {
     this.bindGroups = new Array<Array<GPUBindGroup>>(
       new Array<GPUBindGroup>(),
       new Array<GPUBindGroup>(),
+      new Array<GPUBindGroup>(),
       new Array<GPUBindGroup>()
     );
 
     this.skyboxRenderPipelines = new Array<GPURenderPipeline>(2);
-    this.skyboxBindGroups = new Array<GPUBindGroup>(2);
+    this.skyboxBindGroups = new Array<Array<GPUBindGroup>>(
+      new Array<GPUBindGroup>(),
+      new Array<GPUBindGroup>(),
+      new Array<GPUBindGroup>()
+    );
 
     this.current = 0;
 
@@ -179,10 +185,6 @@ export default class Renderer {
           Math.min(height, this.device.limits.maxTextureDimension2D)
         );
 
-        let sampleCount = 4;
-        if (this.msaaController) {
-          sampleCount = this.msaaController.getValue();
-        }
         this.createMultisamplingTexture();
         this.createDepthTextures();
       }
@@ -439,7 +441,79 @@ export default class Renderer {
     const contianerSpecularImageBitmap = await loadImageBitmap(
       "images/container_specular.png"
     );
-    const cubeImageBitmaps = await Promise.all(
+
+    this.materialShininessUniformBuffer = this.createBuffer(
+      `GPU Uniform Buffer: Material Shininess`,
+      4 * Float32Array.BYTES_PER_ELEMENT,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    );
+
+    for (let i = 0; i < 4; ++i) {
+      const mipIndex = i & 1 ? 1 : 0;
+      const renderPipelineIndex = i & 2 ? 1 : 0;
+
+      const contianerMipLevelCount = mipIndex
+        ? calculateMipLevelCount(
+            contianerImageBitmap.width,
+            contianerImageBitmap.height
+          )
+        : 1;
+
+      const contianerTexture = this.createTexture2DFromSource(
+        `GPU Texture: Contianer ${mipIndex && "with Mipmaps"}`,
+        contianerImageBitmap,
+        contianerMipLevelCount
+      );
+
+      const contianerTextureView = contianerTexture.createView({
+        label: `GPU Texture View: Contianer ${mipIndex && "with Mipmaps"}`,
+      });
+
+      const containerSpecularMipLevelCount = mipIndex
+        ? calculateMipLevelCount(
+            contianerSpecularImageBitmap.width,
+            contianerSpecularImageBitmap.height
+          )
+        : 1;
+
+      const contianerSpecularTexture = this.createTexture2DFromSource(
+        `GPU Texture: Contianer Specular ${mipIndex && "with Mipmaps"}`,
+        contianerSpecularImageBitmap,
+        containerSpecularMipLevelCount
+      );
+
+      const contianerSpecularTextureView = contianerSpecularTexture.createView({
+        label: `GPU Texture View: Contianer Specular ${
+          mipIndex && "with Mipmaps"
+        }`,
+      });
+
+      const bindGroup = this.device.createBindGroup({
+        label: `GPU Bind Group 1: Container, Contianer Specular ${
+          mipIndex && "with Mipmaps"
+        } ${renderPipelineIndex && "with MSAA"}`,
+        layout: this.renderPipelines[renderPipelineIndex].getBindGroupLayout(1),
+        entries: [
+          {
+            binding: 0,
+            resource: {
+              buffer: this.materialShininessUniformBuffer,
+            },
+          },
+          {
+            binding: 1,
+            resource: contianerTextureView,
+          },
+          {
+            binding: 2,
+            resource: contianerSpecularTextureView,
+          },
+        ],
+      });
+      this.bindGroups[1].push(bindGroup);
+    }
+
+    const leadenhallMarketImageBitmaps = await Promise.all(
       [
         "images/LeadenhallMarket/pos-x.jpg",
         "images/LeadenhallMarket/neg-x.jpg",
@@ -449,96 +523,60 @@ export default class Renderer {
         "images/LeadenhallMarket/neg-z.jpg",
       ].map(loadImageBitmap)
     );
-
-    this.materialShininessUniformBuffer = this.createBuffer(
-      `GPU Uniform Buffer: Material Shininess`,
-      4 * Float32Array.BYTES_PER_ELEMENT,
-      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    const pureSkyImageBitmaps = await Promise.all(
+      [
+        "images/PureSky/right.jpg",
+        "images/PureSky/left.jpg",
+        "images/PureSky/top.jpg",
+        "images/PureSky/bottom.jpg",
+        "images/PureSky/front.jpg",
+        "images/PureSky/back.jpg",
+      ].map(loadImageBitmap)
     );
+    const cubeImageBitmaps = [
+      leadenhallMarketImageBitmaps,
+      pureSkyImageBitmaps,
+    ];
 
-    for (let i = 0; i < 2; ++i) {
-      const contianerMipLevelCount = i
-        ? calculateMipLevelCount(
-            contianerImageBitmap.width,
-            contianerImageBitmap.height
-          )
-        : 1;
-
-      const contianerTexture = this.createTexture2DFromSource(
-        `GPU Texture: Contianer ${i}`,
-        contianerImageBitmap,
-        contianerMipLevelCount
-      );
-
-      const contianerTextureView = contianerTexture.createView({
-        label: `GPU Texture View: Contianer ${i}`,
-      });
-
-      const containerSpecularMipLevelCount = i
-        ? calculateMipLevelCount(
-            contianerSpecularImageBitmap.width,
-            contianerSpecularImageBitmap.height
-          )
-        : 1;
-
-      const contianerSpecularTexture = this.createTexture2DFromSource(
-        `GPU Texture: Contianer Specular ${i}`,
-        contianerSpecularImageBitmap,
-        containerSpecularMipLevelCount
-      );
-
-      const contianerSpecularTextureView = contianerSpecularTexture.createView({
-        label: `GPU Texture View: Contianer Specular ${i}`,
-      });
+    for (let i = 0; i < 8; ++i) {
+      const mipIndex = i & 1 ? 1 : 0;
+      const renderPipelineIndex = i & 2 ? 1 : 0;
+      const skyboxIndex = i & 4 ? 1 : 0;
 
       const cubeMipLevelCount = i
         ? calculateMipLevelCount(
-            cubeImageBitmaps[0].width,
-            cubeImageBitmaps[0].height
+            cubeImageBitmaps[skyboxIndex][0].width,
+            cubeImageBitmaps[skyboxIndex][0].height
           )
         : 1;
+
       const cubeTexture = this.createTextureCubeFromSources(
-        `GPU Texture: Cube ${i}`,
-        cubeImageBitmaps,
+        `GPU Texture: Cube ${skyboxIndex}`,
+        cubeImageBitmaps[skyboxIndex],
         cubeMipLevelCount
       );
+
       const cubeTextureView = cubeTexture.createView({
-        label: `GPU Texture View: Cube ${i}`,
+        label: `GPU Texture View: Cube ${skyboxIndex}`,
         dimension: "cube",
       });
 
-      for (let j = 0; j < 2; ++j) {
-        const bindGroup = this.device.createBindGroup({
-          label: `GPU Bind Group 1: Container, Contianer Specular, Cube, ${i}, ${
-            j && "with MSAA"
-          }`,
-          layout: this.renderPipelines[j].getBindGroupLayout(1),
-          entries: [
-            {
-              binding: 0,
-              resource: {
-                buffer: this.materialShininessUniformBuffer,
-              },
-            },
-            {
-              binding: 1,
-              resource: contianerTextureView,
-            },
-            {
-              binding: 2,
-              resource: contianerSpecularTextureView,
-            },
-            {
-              binding: 3,
-              resource: cubeTextureView,
-            },
-          ],
-        });
-        this.bindGroups[1].push(bindGroup);
-      }
+      const bindGroup = this.device.createBindGroup({
+        label: `GPU Bind Group 2: Cube ${mipIndex && "with Mipmaps"} ${
+          renderPipelineIndex && "with MSAA"
+        }`,
+        layout: this.renderPipelines[renderPipelineIndex].getBindGroupLayout(2),
+        entries: [
+          {
+            binding: 0,
+            resource: cubeTextureView,
+          },
+        ],
+      });
+      this.bindGroups[2].push(bindGroup);
     }
 
-    for (let i = 0; i < 16; ++i) {
+    for (let i = 0; i < 32; ++i) {
       const sampler = this.device.createSampler({
         label: `GPU Sampler: Sampler ${i}`,
         addressModeU: i & 1 ? "repeat" : "clamp-to-edge",
@@ -547,19 +585,20 @@ export default class Renderer {
         minFilter: i & 8 ? "linear" : "nearest",
       });
 
-      for (let j = 0; j < 2; ++j) {
-        const bindGroup = this.device.createBindGroup({
-          label: `GPU Bind Group 2 : Sampler ${i}, ${j && "with MSAA"}`,
-          layout: this.renderPipelines[j].getBindGroupLayout(2),
-          entries: [
-            {
-              binding: 0,
-              resource: sampler,
-            },
-          ],
-        });
-        this.bindGroups[2].push(bindGroup);
-      }
+      const renderPipelineIndex = i & 16 ? 1 : 0;
+      const bindGroup = this.device.createBindGroup({
+        label: `GPU Bind Group 2 : Sampler ${i}, ${
+          renderPipelineIndex && "with MSAA"
+        }`,
+        layout: this.renderPipelines[renderPipelineIndex].getBindGroupLayout(3),
+        entries: [
+          {
+            binding: 0,
+            resource: sampler,
+          },
+        ],
+      });
+      this.bindGroups[3].push(bindGroup);
     }
   }
 
@@ -620,34 +659,9 @@ export default class Renderer {
       mipmapFilter: "linear",
     });
 
-    const skyboxImageBitmaps = await Promise.all(
-      [
-        "images/LeadenhallMarket/pos-x.jpg",
-        "images/LeadenhallMarket/neg-x.jpg",
-        "images/LeadenhallMarket/pos-y.jpg",
-        "images/LeadenhallMarket/neg-y.jpg",
-        "images/LeadenhallMarket/pos-z.jpg",
-        "images/LeadenhallMarket/neg-z.jpg",
-      ].map(loadImageBitmap)
-    );
-
-    const skyboxMipLevelCount = calculateMipLevelCount(
-      skyboxImageBitmaps[0].width,
-      skyboxImageBitmaps[0].height
-    );
-    const skyboxTexture = this.createTextureCubeFromSources(
-      `GPU Texture: Skybox`,
-      skyboxImageBitmaps,
-      skyboxMipLevelCount
-    );
-    const skyboxTextureView = skyboxTexture.createView({
-      label: `GPU Texture View: Skybox`,
-      dimension: "cube",
-    });
-
     for (let i = 0; i < 2; ++i) {
-      this.skyboxBindGroups[i] = this.device.createBindGroup({
-        label: `GPU Bind Group: Skybox ${i && "with MSAA"}`,
+      const bindGroup = this.device.createBindGroup({
+        label: `GPU Bind Group: Skybox Matrix, Sampler ${i && "with MSAA"}`,
         layout: this.skyboxRenderPipelines[i].getBindGroupLayout(0),
         entries: [
           {
@@ -658,14 +672,77 @@ export default class Renderer {
           },
           {
             binding: 1,
-            resource: skyboxTextureView,
-          },
-          {
-            binding: 2,
             resource: skyboxSampler,
           },
         ],
       });
+      this.skyboxBindGroups[0].push(bindGroup);
+    }
+
+    const leadenhallMarketImageBitmaps = await Promise.all(
+      [
+        "images/LeadenhallMarket/pos-x.jpg",
+        "images/LeadenhallMarket/neg-x.jpg",
+        "images/LeadenhallMarket/pos-y.jpg",
+        "images/LeadenhallMarket/neg-y.jpg",
+        "images/LeadenhallMarket/pos-z.jpg",
+        "images/LeadenhallMarket/neg-z.jpg",
+      ].map(loadImageBitmap)
+    );
+    const pureSkyImageBitmaps = await Promise.all(
+      [
+        "images/PureSky/right.jpg",
+        "images/PureSky/left.jpg",
+        "images/PureSky/top.jpg",
+        "images/PureSky/bottom.jpg",
+        "images/PureSky/front.jpg",
+        "images/PureSky/back.jpg",
+      ].map(loadImageBitmap)
+    );
+
+    const skyboxImageBitmaps = [
+      leadenhallMarketImageBitmaps,
+      pureSkyImageBitmaps,
+    ];
+
+    const skyboxTextureViews = [];
+    for (let i = 0; i < 2; ++i) {
+      const skyboxMipLevelCount = calculateMipLevelCount(
+        skyboxImageBitmaps[i][0].width,
+        skyboxImageBitmaps[i][0].height
+      );
+      const skyboxTexture = this.createTextureCubeFromSources(
+        `GPU Texture: Skybox ${i}`,
+        skyboxImageBitmaps[i],
+        skyboxMipLevelCount
+      );
+
+      skyboxTextureViews.push(
+        skyboxTexture.createView({
+          label: `GPU Texture View: Skybox ${i}`,
+          dimension: "cube",
+        })
+      );
+    }
+
+    for (let i = 0; i < 4; ++i) {
+      const renderPipelineIndex = i & 1 ? 1 : 0;
+      const skyboxIndex = i & 2 ? 1 : 0;
+
+      const bindGroup = this.device.createBindGroup({
+        label: `GPU Bind Group: Skybox Texture ${
+          renderPipelineIndex && "with MSAA"
+        }`,
+        layout:
+          this.skyboxRenderPipelines[renderPipelineIndex].getBindGroupLayout(1),
+        entries: [
+          {
+            binding: 0,
+            resource: skyboxTextureViews[skyboxIndex],
+          },
+        ],
+      });
+      this.skyboxBindGroups[1].push(bindGroup);
     }
   }
 
@@ -1109,6 +1186,18 @@ export default class Renderer {
     this.msaaController = antiAliasingGUI
       .add(msaaOptions, "enable")
       .name("Enable");
+
+    // skybox GUI
+    const skyboxOptions = {
+      skybox: "Leadenhall Market",
+    };
+
+    const skyboxGUI = gui.addFolder("Skybox");
+    skyboxGUI.closed = false;
+    this.skyboxController = skyboxGUI
+      .add(skyboxOptions, "skybox")
+      .options(["Leadenhall Market", "Pure Sky"])
+      .name("Skybox");
   }
 
   private run(): void {
@@ -1212,9 +1301,6 @@ export default class Renderer {
       shininess.byteLength
     );
 
-    // texture index
-    const textureIndex = this.mipmapsController.getValue() ? 1 : 0;
-
     // sampler index
     const addressModeU = this.addressModeUController.getValue();
     const addressModeV = this.addressModeVController.getValue();
@@ -1224,7 +1310,8 @@ export default class Renderer {
       (addressModeU === "repeat" ? 1 : 0) +
       (addressModeV === "repeat" ? 2 : 0) +
       (magFilter === "linear" ? 4 : 0) +
-      (minFilter === "linear" ? 8 : 0);
+      (minFilter === "linear" ? 8 : 0) +
+      (this.msaaController.getValue() ? 16 : 0);
 
     const commandEncoder = this.device.createCommandEncoder({
       label: "GPU Command Encoder: Draw Frame",
@@ -1248,13 +1335,12 @@ export default class Renderer {
       colorAttachments[0].resolveTarget = canvasTextureView;
     }
 
-    // msaa index
-    const msaaIndex = this.msaaController.getValue() ? 1 : 0;
+    const depthTextureViewIndex = this.msaaController.getValue() ? 1 : 0;
     const renderPassDescriptor: GPURenderPassDescriptor = {
       label: "GPU Renderpass Descriptor: Draw Frame",
       colorAttachments,
       depthStencilAttachment: {
-        view: this.depthTextureViews[msaaIndex],
+        view: this.depthTextureViews[depthTextureViewIndex],
         depthClearValue: 1.0,
         depthLoadOp: "clear",
         depthStoreOp: "store",
@@ -1269,23 +1355,42 @@ export default class Renderer {
       };
     }
 
+    // mipmaps index
+    const mipIndex = this.mipmapsController.getValue() ? 1 : 0;
+
+    // render pipeline(w/ MSAA, w/o MSAA) index
+    const renderPipelineIndex = this.msaaController.getValue() ? 1 : 0;
+
+    // texture index
+    const textureIndex = (mipIndex ? 1 : 0) + (renderPipelineIndex ? 2 : 0);
+
+    // skybox index
+    const skyboxIndex =
+      this.skyboxController.getValue() === "Leadenhall Market" ? 0 : 1;
+
+    // cubemap index
+    const cubemapIndex =
+      (mipIndex ? 1 : 0) +
+      (renderPipelineIndex ? 2 : 0) +
+      (skyboxIndex ? 4 : 0);
+
+    // skybox texture index
+    const skyboxTextureIndex =
+      (renderPipelineIndex ? 1 : 0) + (skyboxIndex ? 2 : 0);
+
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
-    passEncoder.setPipeline(this.renderPipelines[msaaIndex]);
+    passEncoder.setPipeline(this.renderPipelines[renderPipelineIndex]);
     passEncoder.setVertexBuffer(0, this.vertexBuffer);
     passEncoder.setIndexBuffer(this.indexBuffer, "uint32");
-    passEncoder.setBindGroup(0, this.bindGroups[0][msaaIndex]);
-    passEncoder.setBindGroup(
-      1,
-      this.bindGroups[1][textureIndex * 2 + msaaIndex]
-    );
-    passEncoder.setBindGroup(
-      2,
-      this.bindGroups[2][samplerIndex * 2 + msaaIndex]
-    );
+    passEncoder.setBindGroup(0, this.bindGroups[0][renderPipelineIndex]);
+    passEncoder.setBindGroup(1, this.bindGroups[1][textureIndex]);
+    passEncoder.setBindGroup(2, this.bindGroups[2][cubemapIndex]);
+    passEncoder.setBindGroup(3, this.bindGroups[3][samplerIndex]);
     passEncoder.drawIndexed(36);
 
-    passEncoder.setPipeline(this.skyboxRenderPipelines[msaaIndex]);
-    passEncoder.setBindGroup(0, this.skyboxBindGroups[msaaIndex]);
+    passEncoder.setPipeline(this.skyboxRenderPipelines[renderPipelineIndex]);
+    passEncoder.setBindGroup(0, this.skyboxBindGroups[0][renderPipelineIndex]);
+    passEncoder.setBindGroup(1, this.skyboxBindGroups[1][skyboxTextureIndex]);
     passEncoder.draw(3);
 
     passEncoder.end();

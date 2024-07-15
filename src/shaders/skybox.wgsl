@@ -5,8 +5,9 @@ struct VertexOut {
 
 
 @group(0) @binding(0) var<uniform> matrix: mat4x4f;
-@group(0) @binding(1) var cubeTexture: texture_cube<f32>;
-@group(0) @binding(2) var cubeSampler: sampler;
+@group(0) @binding(1) var cubeSampler: sampler;
+@group(1) @binding(0) var cubeTexture: texture_cube<f32>;
+
 
 @vertex
 fn vs_main(@builtin(vertex_index)  vertexIndex: u32) -> VertexOut {
