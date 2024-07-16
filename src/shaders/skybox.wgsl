@@ -25,5 +25,6 @@ fn vs_main(@builtin(vertex_index)  vertexIndex: u32) -> VertexOut {
 fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   var texCoord = matrix * fragData.pos;
 
+  // WebGPU uses a right-handed coordinate system, but cubemaps are an exception, using a left-handed coordinate system
   return textureSample(cubeTexture, cubeSampler, normalize(texCoord.xyz / texCoord.w) * vec3f(1, 1, -1));
 }

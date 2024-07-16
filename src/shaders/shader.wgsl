@@ -65,8 +65,9 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
 
   var result = ambient + diffuse + specular;
 
-  viewDir = normalize(fragData.pos -viewPos);
+  viewDir = normalize(fragData.pos - viewPos);
   reflectDir = reflect(viewDir, normal);
+  // WebGPU uses a right-handed coordinate system, but cubemaps are an exception, using a left-handed coordinate system
   result = textureSample(materialCube, materialSampler, reflectDir * vec3f(1, 1, -1)).rgb;
 
   return vec4f(result, 1.0);
