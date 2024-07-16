@@ -111,14 +111,14 @@ export default class Renderer {
 
   private checkWebGPUSupport(): void {
     if (!navigator.gpu) {
-      throw Error("WebGPU not supported.");
+      throw new Error("WebGPU not supported.");
     }
   }
 
   private async requestAdapter(): Promise<void> {
     this.adapter = await navigator.gpu?.requestAdapter();
     if (!this.adapter) {
-      throw Error("Failed to request WebGPU adapter.");
+      throw new Error("Failed to request WebGPU adapter.");
     }
   }
 
@@ -135,7 +135,7 @@ export default class Renderer {
       requiredFeatures,
     });
     if (!this.device) {
-      throw Error("Failed to request WebGPU device.");
+      throw new Error("Failed to request WebGPU device.");
     }
 
     if (this.hasTimestamp) {
@@ -168,7 +168,7 @@ export default class Renderer {
   private getCanvas(): void {
     this.canvas = document.querySelector("canvas");
     if (!this.canvas) {
-      throw Error("Failed to find canvas element.");
+      throw new Error("Failed to find canvas element.");
     }
 
     const observer = new ResizeObserver((entries) => {
@@ -195,7 +195,7 @@ export default class Renderer {
   private configContext(): void {
     this.context = this.canvas.getContext("webgpu");
     if (!this.context) {
-      throw Error("Failed to get WebGPU context from canvas.");
+      throw new Error("Failed to get WebGPU context from canvas.");
     }
 
     this.presentationFormat = navigator.gpu.getPreferredCanvasFormat();
