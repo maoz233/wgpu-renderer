@@ -10,17 +10,32 @@ export function rand(min?: number, max?: number) {
   return min + Math.random() * (max - min);
 }
 
-export async function loadImageBitmap(url: string) {
+export async function loadImageBitmap(url: string): Promise<ImageBitmap> {
   const res = await fetch(url);
   const blob = await res.blob();
 
   return await createImageBitmap(blob, { colorSpaceConversion: "none" });
 }
 
-export function calculateMipLevelCount(...sizes: number[]) {
+export function calculateMipLevelCount(...sizes: number[]): number {
   const maxSize = Math.max(...sizes);
 
   return (1 + Math.log2(maxSize)) | 0;
+}
+
+export function calculateByteLength(type?: string): number {
+  switch (type) {
+    case "float32":
+      return 4;
+    case "float32x2":
+      return 8;
+    case "float32x3":
+      return 12;
+    case "float32x4":
+      return 16;
+    default:
+      return 0;
+  }
 }
 
 export class RollingAverage {
