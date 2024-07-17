@@ -70,5 +70,5 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   // WebGPU uses a right-handed coordinate system, but cubemaps are an exception, using a left-handed coordinate system
   result = textureSample(materialCube, materialSampler, reflectDir * vec3f(1, 1, -1)).rgb;
 
-  return vec4f(result, 1.0);
+  return vec4f(fragData.normal, 1.0);
 }

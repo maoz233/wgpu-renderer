@@ -8,7 +8,8 @@ import {
   calculateMipLevelCount,
   RollingAverage,
 } from "@/utils";
-import Camera from "./camera";
+import Camera from "@/camera";
+import glTFLoader, { type Geometry } from "@/loader";
 
 const fpsAvg = new RollingAverage();
 const cpuTimeAvg = new RollingAverage();
@@ -30,6 +31,8 @@ export default class Renderer {
   private multisamplingTextureView: GPUTextureView;
   private depthTextures: Array<GPUTexture>;
   private depthTextureViews: Array<GPUTextureView>;
+
+  private geometries: Array<Geometry>;
 
   private renderPipelines: Array<GPURenderPipeline>;
   private vertexBuffer: GPUBuffer;
@@ -96,6 +99,8 @@ export default class Renderer {
     this.configContext();
     this.createMultisamplingTexture();
     this.createDepthTextures();
+
+    await this.loadModel();
 
     this.createRenderPipeline();
     this.createVertexBuffer();
@@ -245,6 +250,13 @@ export default class Renderer {
     }
   }
 
+  private async loadModel(): Promise<void> {
+    const loader = new glTFLoader();
+    await loader.load("models/DamagedHelmet/DamagedHelmet.gltf");
+
+    this.geometries = loader.getGeometries();
+  }
+
   private createRenderPipeline(): void {
     const shaderModule = this.createShaderModule(
       "GPU Shader Module",
@@ -259,22 +271,22 @@ export default class Renderer {
         entryPoint: "vs_main",
         buffers: [
           {
-            arrayStride: (3 + 2 + 3) * Float32Array.BYTES_PER_ELEMENT,
+            arrayStride: this.geometries[0].arrayStride,
             stepMode: "vertex" as GPUVertexStepMode,
             attributes: [
               {
-                format: "float32x3" as GPUVertexFormat,
-                offset: 0,
+                format: this.geometries[0].position.format,
+                offset: this.geometries[0].position.offset,
                 shaderLocation: 0,
               },
               {
-                format: "float32x2" as GPUVertexFormat,
-                offset: 3 * Float32Array.BYTES_PER_ELEMENT,
+                format: this.geometries[0].texCoord.format,
+                offset: this.geometries[0].texCoord.offset,
                 shaderLocation: 1,
               },
               {
-                format: "float32x3" as GPUVertexFormat,
-                offset: (3 + 2) * Float32Array.BYTES_PER_ELEMENT,
+                format: this.geometries[0].normal.format,
+                offset: this.geometries[0].normal.offset,
                 shaderLocation: 2,
               },
             ],
@@ -318,32 +330,7 @@ export default class Renderer {
 
   private createVertexBuffer(): void {
     // prettier-ignore
-    const vertices = new Float32Array([
-      -1.0,  1.0,  1.0, 0.0, 0.0,  0.0,  0.0,  1.0, // 0
-      -1.0,  1.0,  1.0, 1.0, 0.0, -1.0,  0.0,  0.0, // 1
-      -1.0,  1.0,  1.0, 0.0, 1.0,  0.0,  1.0,  0.0, // 2
-      -1.0, -1.0,  1.0, 0.0, 1.0,  0.0,  0.0,  1.0, // 3
-      -1.0, -1.0,  1.0, 1.0, 1.0, -1.0,  0.0,  0.0, // 4
-      -1.0, -1.0,  1.0, 0.0, 0.0,  0.0, -1.0,  0.0, // 5
-       1.0,  1.0,  1.0, 1.0, 0.0,  0.0,  0.0,  1.0, // 6
-       1.0,  1.0,  1.0, 0.0, 0.0,  1.0,  0.0,  0.0, // 7
-       1.0,  1.0,  1.0, 1.0, 1.0,  0.0,  1.0,  0.0, // 8
-       1.0, -1.0,  1.0, 1.0, 1.0,  0.0,  0.0,  1.0, // 9
-       1.0, -1.0,  1.0, 0.0, 1.0,  1.0,  0.0,  0.0, // 10
-       1.0, -1.0,  1.0, 1.0, 0.0,  0.0, -1.0,  0.0, // 11
-      -1.0,  1.0, -1.0, 1.0, 0.0,  0.0,  0.0, -1.0, // 12
-      -1.0,  1.0, -1.0, 0.0, 0.0, -1.0,  0.0,  0.0, // 13
-      -1.0,  1.0, -1.0, 0.0, 0.0,  0.0,  1.0,  0.0, // 14
-      -1.0, -1.0, -1.0, 1.0, 1.0,  0.0,  0.0, -1.0, // 15
-      -1.0, -1.0, -1.0, 0.0, 1.0, -1.0,  0.0,  0.0, // 16
-      -1.0, -1.0, -1.0, 0.0, 1.0,  0.0, -1.0,  0.0, // 17
-       1.0,  1.0, -1.0, 0.0, 0.0,  0.0,  0.0, -1.0, // 18
-       1.0,  1.0, -1.0, 1.0, 0.0,  1.0,  0.0,  0.0, // 19
-       1.0,  1.0, -1.0, 1.0, 0.0,  0.0,  1.0,  0.0, // 20
-       1.0, -1.0, -1.0, 0.0, 1.0,  0.0,  0.0, -1.0, // 21
-       1.0, -1.0, -1.0, 1.0, 1.0,  1.0,  0.0,  0.0, // 22
-       1.0, -1.0, -1.0, 1.0, 1.0,  0.0, -1.0,  0.0, // 23
-    ]);
+    const vertices = this.geometries[0].vertices;
 
     this.vertexBuffer = this.createBuffer(
       "GPU Buffer: Vertex",
@@ -362,14 +349,7 @@ export default class Renderer {
 
   private createIndexBuffer(): void {
     // prettier-ignore
-    const indices = new Uint32Array([
-       0,  3,  6,  6,  3,  9,
-       7, 10, 19, 19, 10, 22,
-      18, 21, 12, 12, 21, 15,
-      13, 16,  1,  1, 16,  4,
-      14,  2, 20, 20,  2,  8,
-       5, 17, 11, 11, 17, 23,
-    ]);
+    const indices = this.geometries[0].indices;
 
     this.indexBuffer = this.createBuffer(
       "GPU Buffer: Index",
@@ -1381,12 +1361,12 @@ export default class Renderer {
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setPipeline(this.renderPipelines[renderPipelineIndex]);
     passEncoder.setVertexBuffer(0, this.vertexBuffer);
-    passEncoder.setIndexBuffer(this.indexBuffer, "uint32");
+    passEncoder.setIndexBuffer(this.indexBuffer, "uint16");
     passEncoder.setBindGroup(0, this.bindGroups[0][renderPipelineIndex]);
     passEncoder.setBindGroup(1, this.bindGroups[1][textureIndex]);
     passEncoder.setBindGroup(2, this.bindGroups[2][cubemapIndex]);
     passEncoder.setBindGroup(3, this.bindGroups[3][samplerIndex]);
-    passEncoder.drawIndexed(36);
+    passEncoder.drawIndexed(this.geometries[0].indices.length);
 
     passEncoder.setPipeline(this.skyboxRenderPipelines[renderPipelineIndex]);
     passEncoder.setBindGroup(0, this.skyboxBindGroups[0][renderPipelineIndex]);
