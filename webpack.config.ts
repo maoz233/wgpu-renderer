@@ -15,7 +15,10 @@ const config: webpack.Configuration = {
       template: path.resolve(__dirname, "src/index.html"),
     }),
     new CopyWebpackPlugin({
-      patterns: [{ from: "src/style.css", to: "style.css" }],
+      patterns: [
+        { from: "src/style.css", to: "style.css" },
+        { from: "public", to: "" },
+      ],
     }),
   ],
   module: {
