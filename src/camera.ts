@@ -35,9 +35,9 @@ export default class Camera {
     this.y = 0;
     this.pitch = 0.0;
     this.yaw = 0.0;
-    this.distance = 10.0;
+    this.distance = 5.0;
     this.target = vec3.create(0.0, 0.0, 0.0);
-    this.eye = vec3.create(0.0, 0.0, 10.0);
+    this.eye = vec3.create(0.0, 0.0, 5.0);
     this.up = vec3.create(0.0, 1.0, 0.0);
     this.right = vec3.create(1.0, 0.0, 0.0);
 
