@@ -417,9 +417,11 @@ export default class Renderer {
   }
 
   private async createTexture(): Promise<void> {
-    const contianerImageBitmap = await loadImageBitmap("images/container.png");
-    const contianerSpecularImageBitmap = await loadImageBitmap(
-      "images/container_specular.png"
+    const diffuseImageBitmap = await loadImageBitmap(
+      this.geometries[0].textures.diffuseURI
+    );
+    const specularImageBitmap = await loadImageBitmap(
+      this.geometries[0].textures.specularURI
     );
 
     this.materialShininessUniformBuffer = this.createBuffer(
@@ -432,40 +434,38 @@ export default class Renderer {
       const mipIndex = i & 1 ? 1 : 0;
       const renderPipelineIndex = i & 2 ? 1 : 0;
 
-      const contianerMipLevelCount = mipIndex
+      const diffuseMipLevelCount = mipIndex
         ? calculateMipLevelCount(
-            contianerImageBitmap.width,
-            contianerImageBitmap.height
+            diffuseImageBitmap.width,
+            diffuseImageBitmap.height
           )
         : 1;
 
-      const contianerTexture = this.createTexture2DFromSource(
-        `GPU Texture: Contianer ${mipIndex && "with Mipmaps"}`,
-        contianerImageBitmap,
-        contianerMipLevelCount
+      const diffuseTexture = this.createTexture2DFromSource(
+        `GPU Texture: Diffuse ${mipIndex && "with Mipmaps"}`,
+        diffuseImageBitmap,
+        diffuseMipLevelCount
       );
 
-      const contianerTextureView = contianerTexture.createView({
-        label: `GPU Texture View: Contianer ${mipIndex && "with Mipmaps"}`,
+      const diffuseTextureView = diffuseTexture.createView({
+        label: `GPU Texture View: Diffuse ${mipIndex && "with Mipmaps"}`,
       });
 
-      const containerSpecularMipLevelCount = mipIndex
+      const specularMipLevelCount = mipIndex
         ? calculateMipLevelCount(
-            contianerSpecularImageBitmap.width,
-            contianerSpecularImageBitmap.height
+            specularImageBitmap.width,
+            specularImageBitmap.height
           )
         : 1;
 
-      const contianerSpecularTexture = this.createTexture2DFromSource(
-        `GPU Texture: Contianer Specular ${mipIndex && "with Mipmaps"}`,
-        contianerSpecularImageBitmap,
-        containerSpecularMipLevelCount
+      const specularTexture = this.createTexture2DFromSource(
+        `GPU Texture: Specular ${mipIndex && "with Mipmaps"}`,
+        specularImageBitmap,
+        specularMipLevelCount
       );
 
-      const contianerSpecularTextureView = contianerSpecularTexture.createView({
-        label: `GPU Texture View: Contianer Specular ${
-          mipIndex && "with Mipmaps"
-        }`,
+      const specularTextureView = specularTexture.createView({
+        label: `GPU Texture View: Specular ${mipIndex && "with Mipmaps"}`,
       });
 
       const bindGroup = this.device.createBindGroup({
@@ -482,11 +482,11 @@ export default class Renderer {
           },
           {
             binding: 1,
-            resource: contianerTextureView,
+            resource: diffuseTextureView,
           },
           {
             binding: 2,
-            resource: contianerSpecularTextureView,
+            resource: specularTextureView,
           },
         ],
       });
@@ -1197,7 +1197,7 @@ export default class Renderer {
     );
 
     // model matrix
-    const model = mat4.identity();
+    const model = this.geometries[0].model;
     transformValues.set(model, 0);
 
     // noraml matrix

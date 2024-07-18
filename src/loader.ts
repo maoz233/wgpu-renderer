@@ -1,5 +1,12 @@
-import type { glTF, glTFBuffer, glTFMesh, glTFPrimitive } from "@/types/glTF";
+import type {
+  glTF,
+  glTFBuffer,
+  glTFMesh,
+  glTFNode,
+  glTFPrimitive,
+} from "@/types/glTF";
 import { calculateByteLength } from "./utils";
+import { mat4, quat, vec3, type Mat4 } from "wgpu-matrix";
 
 export const ComponentType = {
   5120: "sint8",
@@ -26,12 +33,17 @@ export type Layout = {
 };
 
 export type Geometry = {
+  model: Mat4;
   vertices: Float32Array;
   arrayStride: number;
   position: Layout;
   normal: Layout;
   texCoord: Layout;
   indices: Uint16Array;
+  textures: {
+    diffuseURI: string;
+    specularURI: string;
+  };
 };
 
 export default class glTFLoader {
@@ -89,9 +101,31 @@ export default class glTFLoader {
   }
 
   private generateGeometries(): void {
-    this.geometries = new Array<Geometry>(this.gltf.meshes.length);
+    const nodes = this.gltf.nodes;
+    this.geometries = new Array<Geometry>(nodes.length);
 
-    this.gltf.meshes.forEach((mesh: glTFMesh, meshIdx: number): void => {
+    nodes.forEach((node: glTFNode, index: number): void => {
+      let model: Mat4;
+      if ("matrix" in node) {
+        model = mat4.create(...node.matrix);
+      } else {
+        model = mat4.identity();
+
+        if ("scale" in node) {
+          model = mat4.scale(model, vec3.create(...node.scale));
+        }
+
+        if ("translation" in node) {
+          model = mat4.translate(model, vec3.create(...node.translation));
+        }
+
+        if ("rotation" in node) {
+          const q = quat.fromValues(...node.rotation);
+          model = mat4.mul(model, mat4.fromQuat(q));
+        }
+      }
+
+      const mesh = this.gltf.meshes[node.mesh];
       mesh.primitives.map((primitive: glTFPrimitive): void => {
         if ("mode" in primitive && 4 !== primitive.mode) {
           return;
@@ -187,7 +221,24 @@ export default class glTFLoader {
           indexBufferView.byteLength / Uint16Array.BYTES_PER_ELEMENT
         );
 
-        this.geometries[meshIdx] = {
+        const material = this.gltf.materials[primitive.material];
+        // diffuse color texture url
+        const diffuseTextureIndex =
+          material.pbrMetallicRoughness.baseColorTexture.index;
+        const diffuseImageIndex =
+          this.gltf.textures[diffuseTextureIndex].source;
+        const diffuseURI =
+          this.pathname + this.gltf.images[diffuseImageIndex].uri;
+        // specular color texture url
+        const specularTextureIndex =
+          material.pbrMetallicRoughness.metallicRoughnessTexture.index;
+        const specularImageIndex =
+          this.gltf.textures[specularTextureIndex].source;
+        const specularURI =
+          this.pathname + this.gltf.images[specularImageIndex].uri;
+
+        this.geometries[index] = {
+          model,
           vertices,
           arrayStride,
           position: {
@@ -203,6 +254,10 @@ export default class glTFLoader {
             offset: texCoordOffset,
           },
           indices,
+          textures: {
+            diffuseURI,
+            specularURI,
+          },
         };
       });
     });
