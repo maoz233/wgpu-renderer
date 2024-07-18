@@ -61,7 +61,8 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   var viewDir = normalize(viewPos - fragData.pos);
   let halfwayDir = normalize(light.direction + viewDir);
   var spec = pow(max(dot(viewDir, halfwayDir), 0.0), materialShininess);
-  var specular = light.specular * spec * textureSample(materialSpecular, materialSampler, fragData.texCoord).rgb;  
+  var specular = light.specular * spec * textureSample(materialSpecular, materialSampler, fragData.texCoord).rgb; 
+  specular = light.specular * spec * textureSample(materialDiffuse, materialSampler, fragData.texCoord).rgb;  
 
   let result = ambient + diffuse + specular;
 
