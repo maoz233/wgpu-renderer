@@ -41,8 +41,12 @@ export type Geometry = {
   texCoord: Layout;
   indices: Uint16Array;
   textures: {
-    diffuseURI: string;
-    specularURI: string;
+    baseColorURI: string;
+    metallicRoughnessURI: string;
+    normalURI: string;
+    emissive: [number, number, number];
+    emissiveURI: string;
+    occlusionURI: string;
   };
 };
 
@@ -222,20 +226,30 @@ export default class glTFLoader {
         );
 
         const material = this.gltf.materials[primitive.material];
-        // diffuse color texture url
-        const diffuseTextureIndex =
+        // base color texture
+        const bcTerxtureIndex =
           material.pbrMetallicRoughness.baseColorTexture.index;
-        const diffuseImageIndex =
-          this.gltf.textures[diffuseTextureIndex].source;
-        const diffuseURI =
-          this.pathname + this.gltf.images[diffuseImageIndex].uri;
-        // specular color texture url
-        const specularTextureIndex =
+        const bcImageIndex = this.gltf.textures[bcTerxtureIndex].source;
+        const baseColorURI = this.pathname + this.gltf.images[bcImageIndex].uri;
+        // metallic roughness texture
+        const mrTextureIndex =
           material.pbrMetallicRoughness.metallicRoughnessTexture.index;
-        const specularImageIndex =
-          this.gltf.textures[specularTextureIndex].source;
-        const specularURI =
-          this.pathname + this.gltf.images[specularImageIndex].uri;
+        const mrImageIndex = this.gltf.textures[mrTextureIndex].source;
+        const metallicRoughnessURI =
+          this.pathname + this.gltf.images[mrImageIndex].uri;
+        // normal texture
+        const nTextureIndex = material.normalTexture.index;
+        const nImageIndex = this.gltf.textures[nTextureIndex].source;
+        const normalURI = this.pathname + this.gltf.images[nImageIndex].uri;
+        // emissive factor texture
+        const emissive = material.emissiveFactor;
+        const eTextureIndex = material.emissiveTexture.index;
+        const eImageIndex = this.gltf.textures[eTextureIndex].source;
+        const emissiveURI = this.pathname + this.gltf.images[eImageIndex].uri;
+        // occlusion texture
+        const oTextureIndex = material.occlusionTexture.index;
+        const oImageIndex = this.gltf.textures[oTextureIndex].source;
+        const occlusionURI = this.pathname + this.gltf.images[oImageIndex].uri;
 
         this.geometries[index] = {
           model,
@@ -255,8 +269,12 @@ export default class glTFLoader {
           },
           indices,
           textures: {
-            diffuseURI,
-            specularURI,
+            baseColorURI,
+            metallicRoughnessURI,
+            normalURI,
+            emissive,
+            emissiveURI,
+            occlusionURI,
           },
         };
       });
