@@ -417,59 +417,110 @@ export default class Renderer {
   }
 
   private async createTexture(): Promise<void> {
-    const diffuseImageBitmap = await loadImageBitmap(
-      this.geometries[0].textures.diffuseURI
-    );
-    const specularImageBitmap = await loadImageBitmap(
-      this.geometries[0].textures.specularURI
-    );
-
     this.materialShininessUniformBuffer = this.createBuffer(
       `GPU Uniform Buffer: Material Shininess`,
       4 * Float32Array.BYTES_PER_ELEMENT,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
 
+    const baseColorImageBitmap = await loadImageBitmap(
+      this.geometries[0].textures.baseColorURI
+    );
+    const metallicRoughnessImageBitmap = await loadImageBitmap(
+      this.geometries[0].textures.metallicRoughnessURI
+    );
+    const normalImageBitmap = await loadImageBitmap(
+      this.geometries[0].textures.normalURI
+    );
+    const emissive = this.geometries[0].textures.emissive;
+    const emissiveImageBitmap = await loadImageBitmap(
+      this.geometries[0].textures.emissiveURI
+    );
+    const occlusionImageBitmap = await loadImageBitmap(
+      this.geometries[0].textures.occlusionURI
+    );
+
     for (let i = 0; i < 4; ++i) {
       const mipIndex = i & 1 ? 1 : 0;
       const renderPipelineIndex = i & 2 ? 1 : 0;
 
-      const diffuseMipLevelCount = mipIndex
+      const baseColorMipLevelCount = mipIndex
         ? calculateMipLevelCount(
-            diffuseImageBitmap.width,
-            diffuseImageBitmap.height
+            baseColorImageBitmap.width,
+            baseColorImageBitmap.height
           )
         : 1;
-
-      const diffuseTexture = this.createTexture2DFromSource(
-        `GPU Texture: Diffuse ${mipIndex && "with Mipmaps"}`,
-        diffuseImageBitmap,
-        diffuseMipLevelCount
+      const baseColorTexture = this.createTexture2DFromSource(
+        `GPU Texture: Base Color ${mipIndex && "with Mipmaps"}`,
+        baseColorImageBitmap,
+        baseColorMipLevelCount
       );
-
-      const diffuseTextureView = diffuseTexture.createView({
-        label: `GPU Texture View: Diffuse ${mipIndex && "with Mipmaps"}`,
+      const baseColorTextureView = baseColorTexture.createView({
+        label: `GPU Texture View: Base Color ${mipIndex && "with Mipmaps"}`,
       });
 
-      const specularMipLevelCount = mipIndex
+      const metallicRoughnessMipLevelCount = mipIndex
         ? calculateMipLevelCount(
-            specularImageBitmap.width,
-            specularImageBitmap.height
+            metallicRoughnessImageBitmap.width,
+            metallicRoughnessImageBitmap.height
           )
         : 1;
-
-      const specularTexture = this.createTexture2DFromSource(
-        `GPU Texture: Specular ${mipIndex && "with Mipmaps"}`,
-        specularImageBitmap,
-        specularMipLevelCount
+      const metallicRoughnessTexture = this.createTexture2DFromSource(
+        `GPU Texture: Metallic Roughness ${mipIndex && "with Mipmaps"}`,
+        metallicRoughnessImageBitmap,
+        metallicRoughnessMipLevelCount
       );
+      const metallicRoughnessTextureView = metallicRoughnessTexture.createView({
+        label: `GPU Texture View: Metallic Roughness ${mipIndex && "with Mipmaps"}`,
+      });
 
-      const specularTextureView = specularTexture.createView({
-        label: `GPU Texture View: Specular ${mipIndex && "with Mipmaps"}`,
+      const noramlMipLevelCount = mipIndex
+        ? calculateMipLevelCount(
+            normalImageBitmap.width,
+            normalImageBitmap.height
+          )
+        : 1;
+      const normalTexture = this.createTexture2DFromSource(
+        `GPU Texture: Noraml ${mipIndex && "with Mipmaps"}`,
+        normalImageBitmap,
+        noramlMipLevelCount
+      );
+      const normalTextureView = normalTexture.createView({
+        label: `GPU Texture View: Noraml ${mipIndex && "with Mipmaps"}`,
+      });
+
+      const emissiveMipLevelCount = mipIndex
+        ? calculateMipLevelCount(
+            emissiveImageBitmap.width,
+            emissiveImageBitmap.height
+          )
+        : 1;
+      const emissiveTexture = this.createTexture2DFromSource(
+        `GPU Texture: Emissive ${mipIndex && "with Mipmaps"}`,
+        emissiveImageBitmap,
+        emissiveMipLevelCount
+      );
+      const emissiveTextureView = emissiveTexture.createView({
+        label: `GPU Texture View: Emissive ${mipIndex && "with Mipmaps"}`,
+      });
+
+      const occlusionMipLevelCount = mipIndex
+        ? calculateMipLevelCount(
+            occlusionImageBitmap.width,
+            occlusionImageBitmap.height
+          )
+        : 1;
+      const occlusionTexture = this.createTexture2DFromSource(
+        `GPU Texture: Occlusion ${mipIndex && "with Mipmaps"}`,
+        occlusionImageBitmap,
+        occlusionMipLevelCount
+      );
+      const occlusionTextureView = occlusionTexture.createView({
+        label: `GPU Texture View: Occlusion ${mipIndex && "with Mipmaps"}`,
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 1: Container, Contianer Specular ${
+        label: `GPU Bind Group 1: Material ${
           mipIndex && "with Mipmaps"
         } ${renderPipelineIndex && "with MSAA"}`,
         layout: this.renderPipelines[renderPipelineIndex].getBindGroupLayout(1),
@@ -482,11 +533,11 @@ export default class Renderer {
           },
           {
             binding: 1,
-            resource: diffuseTextureView,
+            resource: baseColorTextureView,
           },
           {
             binding: 2,
-            resource: specularTextureView,
+            resource: metallicRoughnessTextureView,
           },
         ],
       });
