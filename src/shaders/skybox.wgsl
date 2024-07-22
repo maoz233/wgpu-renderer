@@ -11,7 +11,7 @@ struct VertexOut {
 
 @vertex
 fn vs_main(@builtin(vertex_index)  vertexIndex: u32) -> VertexOut {
-  var positions = array(vec2f(-1, 3), vec2f(-1,-1), vec2f(3, -1));
+  let positions = array(vec2f(-1, 3), vec2f(-1,-1), vec2f(3, -1));
 
   var output: VertexOut;
 
@@ -23,8 +23,13 @@ fn vs_main(@builtin(vertex_index)  vertexIndex: u32) -> VertexOut {
 
 @fragment
 fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
-  var texCoord = matrix * fragData.pos;
-
+  let texCoord = matrix * fragData.pos;
   // WebGPU uses a right-handed coordinate system, but cubemaps are an exception, using a left-handed coordinate system
-  return textureSample(cubeTexture, cubeSampler, normalize(texCoord.xyz / texCoord.w) * vec3f(1, 1, -1));
+  var color = textureSample(cubeTexture, cubeSampler, normalize(texCoord.xyz / texCoord.w) * vec3f(1, 1, -1)).rgb;
+  // HDR Tone Mapping
+  color = color/ (color + 1.0);
+  // Gamma Correction
+  color = pow(color, vec3f(1.0/2.2));
+
+  return vec4f(color, 1.0);
 }

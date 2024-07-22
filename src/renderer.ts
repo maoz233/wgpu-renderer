@@ -4,6 +4,7 @@ import skyboxShaderCode from "@/shaders/skybox.wgsl";
 import { mat4, utils, vec3 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import {
+  rand,
   loadImageBitmap,
   calculateMipLevelCount,
   RollingAverage,
@@ -40,8 +41,7 @@ export default class Renderer {
   private bindGroups: Array<Array<GPUBindGroup>>;
   private transformUniformBuffer: GPUBuffer;
   private viewPositionUniformBuffer: GPUBuffer;
-  private lightUniformBuffer: GPUBuffer;
-  private materialShininessUniformBuffer: GPUBuffer;
+  private lightPositionsUniformBuffer: GPUBuffer;
 
   private skyboxRenderPipelines: Array<GPURenderPipeline>;
   private skyboxBindGroups: Array<Array<GPUBindGroup>>;
@@ -379,15 +379,15 @@ export default class Renderer {
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
 
-    this.lightUniformBuffer = this.createBuffer(
+    this.lightPositionsUniformBuffer = this.createBuffer(
       `GPU Uniform Buffer: Light`,
-      (4 + 4 + 4 + 4) * Float32Array.BYTES_PER_ELEMENT,
+      4 * 4 * Float32Array.BYTES_PER_ELEMENT,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
 
     for (let i = 0; i < 2; ++i) {
       const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 0: Transform, View Position, Light ${
+        label: `GPU Bind Group 0: Transform, View Position, Light Direction${
           i && "with MSAA"
         }`,
         layout: this.renderPipelines[i].getBindGroupLayout(0),
@@ -407,7 +407,7 @@ export default class Renderer {
           {
             binding: 2,
             resource: {
-              buffer: this.lightUniformBuffer,
+              buffer: this.lightPositionsUniformBuffer,
             },
           },
         ],
@@ -417,12 +417,6 @@ export default class Renderer {
   }
 
   private async createTexture(): Promise<void> {
-    this.materialShininessUniformBuffer = this.createBuffer(
-      `GPU Uniform Buffer: Material Shininess`,
-      4 * Float32Array.BYTES_PER_ELEMENT,
-      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-    );
-
     const baseColorImageBitmap = await loadImageBitmap(
       this.geometries[0].textures.baseColorURI
     );
@@ -527,17 +521,23 @@ export default class Renderer {
         entries: [
           {
             binding: 0,
-            resource: {
-              buffer: this.materialShininessUniformBuffer,
-            },
-          },
-          {
-            binding: 1,
             resource: baseColorTextureView,
           },
           {
-            binding: 2,
+            binding: 1,
             resource: metallicRoughnessTextureView,
+          },
+          {
+            binding: 2,
+            resource: normalTextureView,
+          },
+          {
+            binding: 3,
+            resource: emissiveTextureView,
+          },
+          {
+            binding: 4,
+            resource: occlusionTextureView,
           },
         ],
       });
@@ -1301,35 +1301,22 @@ export default class Renderer {
       this.camera.position.byteLength
     );
 
-    // light vlaues
-    const lightValues = new Float32Array(
-      this.lightUniformBuffer.size / Float32Array.BYTES_PER_ELEMENT
-    );
-    const lightDir = vec3.normalize(vec3.create(0.0, -0.2, -0.75));
-    lightValues.set(lightDir, 0);
-    const lightAmbient = vec3.create(0.2, 0.2, 0.2);
-    lightValues.set(lightAmbient, 4);
-    const lightDiffuse = vec3.create(0.5, 0.5, 0.5);
-    lightValues.set(lightDiffuse, 8);
-    const lightSpecular = vec3.create(1.0, 1.0, 1.0);
-    lightValues.set(lightSpecular, 12);
-
-    this.device.queue.writeBuffer(
-      this.lightUniformBuffer,
-      0,
-      lightValues.buffer,
-      lightValues.byteOffset,
-      lightValues.byteLength
+    // light positions
+    const lightPositions = new Float32Array(
+      this.lightPositionsUniformBuffer.size / Float32Array.BYTES_PER_ELEMENT
     );
 
-    // material shininess
-    const shininess = new Float32Array([32.0]);
+    lightPositions.set(vec3.create(1.0, 1.0, -1.0), 0);
+    lightPositions.set(vec3.create(-1.0, 1.0, -1.0), 0);
+    lightPositions.set(vec3.create(1.0, -1.0, -1.0), 0);
+    lightPositions.set(vec3.create(-1.0, -1.0, -1.0), 0);
+
     this.device.queue.writeBuffer(
-      this.materialShininessUniformBuffer,
+      this.lightPositionsUniformBuffer,
       0,
-      shininess.buffer,
-      shininess.byteOffset,
-      shininess.byteLength
+      lightPositions.buffer,
+      lightPositions.byteOffset,
+      lightPositions.byteLength
     );
 
     // sampler index
