@@ -10,7 +10,7 @@ import {
   RollingAverage,
 } from "@/utils";
 import Camera from "@/camera";
-import glTFLoader, { type Geometry } from "@/loader";
+import glTFLoader, { type Geometry } from "@/glTF";
 
 const fpsAvg = new RollingAverage();
 const cpuTimeAvg = new RollingAverage();
