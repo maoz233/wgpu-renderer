@@ -21,6 +21,7 @@ struct Transform {
 @group(0) @binding(0) var<uniform> transform: Transform;
 @group(0) @binding(1) var<uniform> viewPos: vec3f;
 @group(0) @binding(2) var<uniform> lightPositions: array<vec3f, 4>;
+@group(0) @binding(3) var<uniform> lightColors: array<vec3f, 4>;
 @group(1) @binding(0) var albedoMap: texture_2d<f32>;
 @group(1) @binding(1) var metallicRoughnessMap: texture_2d<f32>;
 @group(1) @binding(2) var normalMap: texture_2d<f32>;
@@ -79,26 +80,28 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let st1 = dpdx(fragData.texCoord);
   let st2 = dpdy(fragData.texCoord);
   let N = normalize(fragData.normal);
-  let T = normalize(q1 * st2.x - q2 * st1.x);
+  let T = normalize(q1 * st2.y - q2 * st1.y);
   let B = -normalize(cross(N, T));
   let TBN = mat3x3f(T, B, N);
   normal = normalize(TBN * normal);
-  let metallic = textureSample(metallicRoughnessMap, mapSampler, fragData.texCoord).ggg;
-  let roughness = textureSample(metallicRoughnessMap, mapSampler, fragData.texCoord).b;
+  let metalness = textureSample(metallicRoughnessMap, mapSampler, fragData.texCoord).b;
+  let roughness = textureSample(metallicRoughnessMap, mapSampler, fragData.texCoord).g;
   let emissive = textureSample(emissiveMap, mapSampler, fragData.texCoord);
   let occulusion = textureSample(occulusionMap, mapSampler, fragData.texCoord).r;
 
   let viewDir = normalize(viewPos - fragData.pos);
   var f0 = vec3f(0.04);
-  f0 = mix(albedo, metallic, f0);
+  f0 = mix(f0, albedo, metalness);
 
   // relflectance equation
   var Lo = vec3f(0.0);
 
   for(var i = 0; i < 4; i++) {
     let lightDir = normalize(lightPositions[i] - fragData.pos);
-    let halfwayDir = normalize(lightDir + viewDir);
-    let radiance = vec3f(1.0);
+    let halfwayDir = normalize(viewDir + lightDir);
+    let distance = length(lightPositions[i] - fragData.pos);
+    let attenuation = 1.0 / pow(distance, 2.0);
+    let radiance = lightColors[i] * attenuation;
 
     // BRDF: Cook-Torrance
     let D = TrowbridgeReitzGGX(normal, halfwayDir, roughness);
@@ -106,7 +109,8 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
     let G = GeometrySmith(normal, viewDir, lightDir, roughness);
 
     let kS = F;
-    let kD = vec3f(1.0) - kS;
+    var kD = vec3f(1.0) - kS;
+    kD *= 1.0 - metalness;
 
     let numerator = D * F * G;
     let denominator = 4.0 * max(dot(normal, viewDir), 0.0) * max(dot(normal, lightDir), 0.0) + 0.001;

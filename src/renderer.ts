@@ -42,6 +42,7 @@ export default class Renderer {
   private transformUniformBuffer: GPUBuffer;
   private viewPositionUniformBuffer: GPUBuffer;
   private lightPositionsUniformBuffer: GPUBuffer;
+  private lightColorsUniformBuffer: GPUBuffer;
 
   private skyboxRenderPipelines: Array<GPURenderPipeline>;
   private skyboxBindGroups: Array<Array<GPUBindGroup>>;
@@ -380,7 +381,13 @@ export default class Renderer {
     );
 
     this.lightPositionsUniformBuffer = this.createBuffer(
-      `GPU Uniform Buffer: Light`,
+      `GPU Uniform Buffer: Light Positions`,
+      4 * 4 * Float32Array.BYTES_PER_ELEMENT,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    );
+
+    this.lightColorsUniformBuffer = this.createBuffer(
+      `GPU Uniform Buffer: Light Colors`,
       4 * 4 * Float32Array.BYTES_PER_ELEMENT,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
@@ -408,6 +415,12 @@ export default class Renderer {
             binding: 2,
             resource: {
               buffer: this.lightPositionsUniformBuffer,
+            },
+          },
+          {
+            binding: 3,
+            resource: {
+              buffer: this.lightColorsUniformBuffer,
             },
           },
         ],
@@ -1306,10 +1319,10 @@ export default class Renderer {
       this.lightPositionsUniformBuffer.size / Float32Array.BYTES_PER_ELEMENT
     );
 
-    lightPositions.set(vec3.create(1.0, 1.0, -1.0), 0);
-    lightPositions.set(vec3.create(-1.0, 1.0, -1.0), 0);
-    lightPositions.set(vec3.create(1.0, -1.0, -1.0), 0);
-    lightPositions.set(vec3.create(-1.0, -1.0, -1.0), 0);
+    lightPositions.set(vec3.create(10.0, 10.0, 10.0), 0);
+    lightPositions.set(vec3.create(-10.0, 10.0, 10.0), 4);
+    lightPositions.set(vec3.create(10.0, -10.0, 10.0), 8);
+    lightPositions.set(vec3.create(-10.0, -10.0, 10.0), 12);
 
     this.device.queue.writeBuffer(
       this.lightPositionsUniformBuffer,
@@ -1317,6 +1330,24 @@ export default class Renderer {
       lightPositions.buffer,
       lightPositions.byteOffset,
       lightPositions.byteLength
+    );
+
+    // light colors
+    const lightColors = new Float32Array(
+      this.lightColorsUniformBuffer.size / Float32Array.BYTES_PER_ELEMENT
+    );
+
+    lightColors.set(vec3.create(300.0, 300.0, 300.0), 0);
+    lightColors.set(vec3.create(300.0, 300.0, 300.0), 4);
+    lightColors.set(vec3.create(300.0, 300.0, 300.0), 8);
+    lightColors.set(vec3.create(300.0, 300.0, 300.0), 12);
+
+    this.device.queue.writeBuffer(
+      this.lightColorsUniformBuffer,
+      0,
+      lightColors.buffer,
+      lightColors.byteOffset,
+      lightColors.byteLength
     );
 
     // sampler index

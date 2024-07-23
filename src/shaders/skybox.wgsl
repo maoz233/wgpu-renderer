@@ -26,10 +26,10 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let texCoord = matrix * fragData.pos;
   // WebGPU uses a right-handed coordinate system, but cubemaps are an exception, using a left-handed coordinate system
   var color = textureSample(cubeTexture, cubeSampler, normalize(texCoord.xyz / texCoord.w) * vec3f(1, 1, -1)).rgb;
-  // HDR Tone Mapping
-  color = color/ (color + 1.0);
-  // Gamma Correction
-  color = pow(color, vec3f(1.0/2.2));
+  // // HDR Tone Mapping
+  // color = color/ (color + 1.0);
+  // // Gamma Correction
+  // color = pow(color, vec3f(1.0/2.2));
 
   return vec4f(color, 1.0);
 }
