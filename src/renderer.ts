@@ -1,16 +1,17 @@
 import shaderCode from "@/shaders/shader.wgsl";
 import mipmapShaderCode from "@/shaders/mipmap.wgsl";
 import skyboxShaderCode from "@/shaders/skybox.wgsl";
+import equirectangularShaderCode from "@/shaders/equirectangular.wgsl";
 import { mat4, utils, vec3 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import {
-  rand,
   loadImageBitmap,
   calculateMipLevelCount,
   RollingAverage,
 } from "@/utils";
 import Camera from "@/camera";
 import glTFLoader, { type Geometry } from "@/glTF";
+import HDRLoader, { type HDR } from "@/hdr";
 
 const fpsAvg = new RollingAverage();
 const cpuTimeAvg = new RollingAverage();
@@ -34,6 +35,8 @@ export default class Renderer {
   private depthTextureViews: Array<GPUTextureView>;
 
   private geometries: Array<Geometry>;
+
+  private hdrs: Array<HDR>;
 
   private renderPipelines: Array<GPURenderPipeline>;
   private vertexBuffer: GPUBuffer;
@@ -102,6 +105,8 @@ export default class Renderer {
     this.createDepthTextures();
 
     await this.loadModel();
+
+    await this.loadHDR();
 
     this.createRenderPipeline();
     this.createVertexBuffer();
@@ -258,15 +263,137 @@ export default class Renderer {
     this.geometries = loader.getGeometries();
   }
 
+  private async loadHDR(): Promise<void> {
+    const loader0 = new HDRLoader();
+    await loader0.load("images/puresky_4k.hdr");
+    const loader1 = new HDRLoader();
+    await loader1.load("images/clear_puresky_4k.hdr");
+    this.hdrs = [loader0.hdr, loader1.hdr];
+  }
+
   private createRenderPipeline(): void {
     const shaderModule = this.createShaderModule(
       "GPU Shader Module",
       shaderCode
     );
 
+    const bindGroupLayout0 = this.device.createBindGroupLayout({
+      label: "GPU Bind Group 0 Layout",
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: "uniform" as GPUBufferBindingType },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: "uniform" as GPUBufferBindingType },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: "uniform" as GPUBufferBindingType },
+        },
+        {
+          binding: 3,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: "uniform" as GPUBufferBindingType },
+        },
+      ],
+    });
+    const bindGroupLayout1 = this.device.createBindGroupLayout({
+      label: "GPU Bind Group 1 Layout",
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float" as GPUTextureSampleType,
+            viewDimension: "2d" as GPUTextureViewDimension,
+            multisampled: false,
+          },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float" as GPUTextureSampleType,
+            viewDimension: "2d" as GPUTextureViewDimension,
+            multisampled: false,
+          },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float" as GPUTextureSampleType,
+            viewDimension: "2d" as GPUTextureViewDimension,
+            multisampled: false,
+          },
+        },
+        {
+          binding: 3,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float" as GPUTextureSampleType,
+            viewDimension: "2d" as GPUTextureViewDimension,
+            multisampled: false,
+          },
+        },
+        {
+          binding: 4,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float" as GPUTextureSampleType,
+            viewDimension: "2d" as GPUTextureViewDimension,
+            multisampled: false,
+          },
+        },
+      ],
+    });
+    const bindGroupLayout2 = this.device.createBindGroupLayout({
+      label: "GPU Bind Group 2 Layout",
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "unfilterable-float" as GPUTextureSampleType,
+            viewDimension: "cube" as GPUTextureViewDimension,
+            multisampled: false,
+          },
+        },
+      ],
+    });
+    const bindGroupLayout3 = this.device.createBindGroupLayout({
+      label: "GPU Bind Group 3 Layout",
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          sampler: { type: "filtering" as GPUSamplerBindingType },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          sampler: { type: "non-filtering" as GPUSamplerBindingType },
+        },
+      ],
+    });
+    const renderPipelineLayout = this.device.createPipelineLayout({
+      label: "GPU Render Pipeline Layout",
+      bindGroupLayouts: [
+        bindGroupLayout0,
+        bindGroupLayout1,
+        bindGroupLayout2,
+        bindGroupLayout3,
+      ],
+    });
+
     const renderPipelineDescriptor: GPURenderPipelineDescriptor = {
       label: "GPU Render Pipeline",
-      layout: "auto",
+      layout: renderPipelineLayout,
       vertex: {
         module: shaderModule,
         entryPoint: "vs_main",
@@ -557,48 +684,12 @@ export default class Renderer {
       this.bindGroups[1].push(bindGroup);
     }
 
-    const leadenhallMarketImageBitmaps = await Promise.all(
-      [
-        "images/LeadenhallMarket/pos-x.jpg",
-        "images/LeadenhallMarket/neg-x.jpg",
-        "images/LeadenhallMarket/pos-y.jpg",
-        "images/LeadenhallMarket/neg-y.jpg",
-        "images/LeadenhallMarket/pos-z.jpg",
-        "images/LeadenhallMarket/neg-z.jpg",
-      ].map(loadImageBitmap)
-    );
-    const pureSkyImageBitmaps = await Promise.all(
-      [
-        "images/PureSky/right.jpg",
-        "images/PureSky/left.jpg",
-        "images/PureSky/top.jpg",
-        "images/PureSky/bottom.jpg",
-        "images/PureSky/front.jpg",
-        "images/PureSky/back.jpg",
-      ].map(loadImageBitmap)
-    );
-    const cubeImageBitmaps = [
-      leadenhallMarketImageBitmaps,
-      pureSkyImageBitmaps,
-    ];
-
     for (let i = 0; i < 8; ++i) {
       const mipIndex = i & 1 ? 1 : 0;
       const renderPipelineIndex = i & 2 ? 1 : 0;
       const skyboxIndex = i & 4 ? 1 : 0;
 
-      const cubeMipLevelCount = i
-        ? calculateMipLevelCount(
-            cubeImageBitmaps[skyboxIndex][0].width,
-            cubeImageBitmaps[skyboxIndex][0].height
-          )
-        : 1;
-
-      const cubeTexture = this.createTextureCubeFromSources(
-        `GPU Texture: Cube ${skyboxIndex}`,
-        cubeImageBitmaps[skyboxIndex],
-        cubeMipLevelCount
-      );
+      const cubeTexture = this.createTextureCubeFromHDR(this.hdrs[skyboxIndex]);
 
       const cubeTextureView = cubeTexture.createView({
         label: `GPU Texture View: Cube ${skyboxIndex}`,
@@ -621,24 +712,38 @@ export default class Renderer {
     }
 
     for (let i = 0; i < 32; ++i) {
-      const sampler = this.device.createSampler({
-        label: `GPU Sampler: Sampler ${i}`,
+      const sampler2D = this.device.createSampler({
+        label: `GPU Sampler: Sampler 2D ${i}`,
         addressModeU: i & 1 ? "repeat" : "clamp-to-edge",
         addressModeV: i & 2 ? "repeat" : "clamp-to-edge",
         magFilter: i & 4 ? "linear" : "nearest",
         minFilter: i & 8 ? "linear" : "nearest",
       });
 
+      const samplerCube = this.device.createSampler({
+        label: `GPU Sampler: Sampler Cube ${i}`,
+        addressModeU: "clamp-to-edge",
+        addressModeV: "clamp-to-edge",
+        addressModeW: "clamp-to-edge",
+        magFilter: "nearest",
+        minFilter: "nearest",
+        mipmapFilter: "nearest",
+      });
+
       const renderPipelineIndex = i & 16 ? 1 : 0;
       const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 2 : Sampler ${i}, ${
+        label: `GPU Bind Group 3 : Sampler ${i}, ${
           renderPipelineIndex && "with MSAA"
         }`,
         layout: this.renderPipelines[renderPipelineIndex].getBindGroupLayout(3),
         entries: [
           {
             binding: 0,
-            resource: sampler,
+            resource: sampler2D,
+          },
+          {
+            binding: 1,
+            resource: samplerCube,
           },
         ],
       });
@@ -652,9 +757,44 @@ export default class Renderer {
       skyboxShaderCode
     );
 
+    const bindGroupLayout0 = this.device.createBindGroupLayout({
+      label: "GPU Bind Group 0 Layout: Skybox",
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: {
+            type: "uniform" as GPUBufferBindingType,
+          },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          sampler: { type: "non-filtering" as GPUSamplerBindingType },
+        },
+      ],
+    });
+    const bindGroupLayout1 = this.device.createBindGroupLayout({
+      label: "GPU Bind Group 1 Layout: Skybox",
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "unfilterable-float" as GPUTextureSampleType,
+            viewDimension: "cube" as GPUTextureViewDimension,
+            multisampled: false,
+          },
+        },
+      ],
+    });
+    const skyboxRenderPipelineLayout = this.device.createPipelineLayout({
+      label: "GPU Render Pipeline Layout: Skybox",
+      bindGroupLayouts: [bindGroupLayout0, bindGroupLayout1],
+    });
     const skyboxRenderPipelineDescriptor: GPURenderPipelineDescriptor = {
       label: `GPU Render Pipeline: Skybox`,
-      layout: "auto",
+      layout: skyboxRenderPipelineLayout,
       vertex: {
         module: skyboxShaderModule,
         entryPoint: "vs_main",
@@ -698,9 +838,13 @@ export default class Renderer {
     );
 
     const skyboxSampler = this.device.createSampler({
-      magFilter: "linear",
-      minFilter: "linear",
-      mipmapFilter: "linear",
+      label: "GPU Sampler: Skybox",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+      addressModeW: "clamp-to-edge",
+      magFilter: "nearest",
+      minFilter: "nearest",
+      mipmapFilter: "nearest",
     });
 
     for (let i = 0; i < 2; ++i) {
@@ -723,43 +867,9 @@ export default class Renderer {
       this.skyboxBindGroups[0].push(bindGroup);
     }
 
-    const leadenhallMarketImageBitmaps = await Promise.all(
-      [
-        "images/LeadenhallMarket/pos-x.jpg",
-        "images/LeadenhallMarket/neg-x.jpg",
-        "images/LeadenhallMarket/pos-y.jpg",
-        "images/LeadenhallMarket/neg-y.jpg",
-        "images/LeadenhallMarket/pos-z.jpg",
-        "images/LeadenhallMarket/neg-z.jpg",
-      ].map(loadImageBitmap)
-    );
-    const pureSkyImageBitmaps = await Promise.all(
-      [
-        "images/PureSky/right.jpg",
-        "images/PureSky/left.jpg",
-        "images/PureSky/top.jpg",
-        "images/PureSky/bottom.jpg",
-        "images/PureSky/front.jpg",
-        "images/PureSky/back.jpg",
-      ].map(loadImageBitmap)
-    );
-
-    const skyboxImageBitmaps = [
-      leadenhallMarketImageBitmaps,
-      pureSkyImageBitmaps,
-    ];
-
     const skyboxTextureViews = [];
     for (let i = 0; i < 2; ++i) {
-      const skyboxMipLevelCount = calculateMipLevelCount(
-        skyboxImageBitmaps[i][0].width,
-        skyboxImageBitmaps[i][0].height
-      );
-      const skyboxTexture = this.createTextureCubeFromSources(
-        `GPU Texture: Skybox ${i}`,
-        skyboxImageBitmaps[i],
-        skyboxMipLevelCount
-      );
+      const skyboxTexture = this.createTextureCubeFromHDR(this.hdrs[i]);
 
       skyboxTextureViews.push(
         skyboxTexture.createView({
@@ -847,39 +957,8 @@ export default class Renderer {
     return texture;
   }
 
-  private createTextureCubeFromSources(
-    label: string,
-    sources: Array<GPUImageCopyExternalImageSource>,
-    mipLevelCount: number
-  ): GPUTexture {
-    const source = sources[0];
-
-    let width: number;
-    let height: number;
-    if (source instanceof HTMLVideoElement) {
-      width = source.videoWidth;
-      height = source.videoHeight;
-    } else if (source instanceof VideoFrame) {
-      width = source.codedWidth;
-      height = source.codedHeight;
-    } else {
-      width = source.width;
-      height = source.height;
-    }
-    const length = sources.length;
-
-    const texture = this.device.createTexture({
-      label,
-      format: "rgba8unorm",
-      mipLevelCount,
-      size: [width, height, length],
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    this.copySourcesToTexture(this.device, sources, texture);
+  private createTextureCubeFromHDR(hdr: HDR): GPUTexture {
+    const texture = this.generateCubemap()(this.device, hdr, 1440);
 
     return texture;
   }
@@ -906,39 +985,6 @@ export default class Renderer {
       { source },
       { texture },
       { width, height }
-    );
-
-    if (texture.mipLevelCount > 1) {
-      this.generateMipmaps()(device, texture);
-    }
-  }
-
-  private copySourcesToTexture(
-    device: GPUDevice,
-    sources: Array<GPUImageCopyExternalImageSource>,
-    texture: GPUTexture
-  ): void {
-    sources.forEach(
-      (source: GPUImageCopyExternalImageSource, layer: number) => {
-        let width: number;
-        let height: number;
-        if (source instanceof HTMLVideoElement) {
-          width = source.videoWidth;
-          height = source.videoHeight;
-        } else if (source instanceof VideoFrame) {
-          width = source.codedWidth;
-          height = source.codedHeight;
-        } else {
-          width = source.width;
-          height = source.height;
-        }
-
-        device.queue.copyExternalImageToTexture(
-          { source },
-          { texture, origin: [0, 0, layer] },
-          { width, height }
-        );
-      }
     );
 
     if (texture.mipLevelCount > 1) {
@@ -1166,6 +1212,138 @@ export default class Renderer {
     };
   }
 
+  private generateCubemap(): (d: GPUDevice, h: HDR, s: number) => GPUTexture {
+    let module: GPUShaderModule;
+    let computePipeline: GPUComputePipeline;
+
+    return function generateCubemap(
+      device: GPUDevice,
+      hdr: HDR,
+      size: number
+    ): GPUTexture {
+      if (!module) {
+        module = device.createShaderModule({
+          label: "GPU Shader Module: Cubemap Generation",
+          code: equirectangularShaderCode,
+        });
+      }
+
+      if (!computePipeline) {
+        const bindGroupLayout = device.createBindGroupLayout({
+          label: "GPU Bind Group Layout: Cubemap Generation",
+          entries: [
+            {
+              binding: 0,
+              visibility: GPUShaderStage.COMPUTE,
+              texture: {
+                sampleType: "unfilterable-float" as GPUTextureSampleType,
+                viewDimension: "2d" as GPUTextureViewDimension,
+                multisampled: false,
+              },
+            },
+            {
+              binding: 1,
+              visibility: GPUShaderStage.COMPUTE,
+              storageTexture: {
+                access: "write-only" as GPUStorageTextureAccess,
+                format: "rgba32float" as GPUTextureFormat,
+                viewDimension: "2d-array" as GPUTextureViewDimension,
+              },
+            },
+          ],
+        });
+        const computePipelineLayout = device.createPipelineLayout({
+          label: "GPU Compute Pipeline Layout: Cubemap Generation",
+          bindGroupLayouts: [bindGroupLayout],
+        });
+        computePipeline = device.createComputePipeline({
+          label: "GPU Compute Pipeline: Cubemap Generation",
+          layout: computePipelineLayout,
+          compute: {
+            module,
+            entryPoint: "compute_main",
+          },
+        });
+      }
+
+      const srcTexture = device.createTexture({
+        label: "GPU Texture: Cubemap Generation Source",
+        size: [hdr.width, hdr.height],
+        format: "rgba32float",
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+      device.queue.writeTexture(
+        {
+          texture: srcTexture,
+          mipLevel: 0,
+          origin: [0, 0, 0],
+        },
+        hdr.data,
+        {
+          offset: 0,
+          bytesPerRow: hdr.width * 4 * Float32Array.BYTES_PER_ELEMENT,
+          rowsPerImage: hdr.height,
+        },
+        {
+          width: hdr.width,
+          height: hdr.height,
+        }
+      );
+      const srcTextureView = srcTexture.createView({
+        label: "GPU Texture View: Cubemap Generation Source",
+        format: "rgba32float",
+        dimension: "2d",
+      });
+
+      const dstTexture = device.createTexture({
+        label: "GPU Texture: Cubemap Generation Destination",
+        size: [size, size, 6],
+        format: "rgba32float",
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+      });
+
+      const dstTextureView = dstTexture.createView({
+        label: "GPU Texture View: Cubemap Generation Destination",
+        format: "rgba32float",
+        dimension: "2d-array",
+      });
+
+      const bindGroup = device.createBindGroup({
+        label: "GPU Bind Group: Cubemap Generation",
+        layout: computePipeline.getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: srcTextureView,
+          },
+          {
+            binding: 1,
+            resource: dstTextureView,
+          },
+        ],
+      });
+
+      const encoder = device.createCommandEncoder({
+        label: "GPU Command Encoder: Cubemap Generation",
+      });
+
+      const workgroupsNum = Math.floor((size + 15) / 16);
+
+      const pass = encoder.beginComputePass({
+        label: "GPU Compute Pass: Cubemap Generation",
+      });
+      pass.setPipeline(computePipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.dispatchWorkgroups(workgroupsNum, workgroupsNum, 6);
+      pass.end();
+
+      device.queue.submit([encoder.finish()]);
+
+      return dstTexture;
+    };
+  }
+
   private initGUI(): void {
     const gui = new GUI({
       name: "My GUI",
@@ -1233,14 +1411,14 @@ export default class Renderer {
 
     // skybox GUI
     const skyboxOptions = {
-      skybox: "Leadenhall Market",
+      skybox: "Pure Sky",
     };
 
     const skyboxGUI = gui.addFolder("Skybox");
     skyboxGUI.closed = false;
     this.skyboxController = skyboxGUI
       .add(skyboxOptions, "skybox")
-      .options(["Leadenhall Market", "Pure Sky"])
+      .options(["Pure Sky", "Clear Pure Sky"])
       .name("Skybox");
   }
 
@@ -1414,8 +1592,7 @@ export default class Renderer {
     const textureIndex = (mipIndex ? 1 : 0) + (renderPipelineIndex ? 2 : 0);
 
     // skybox index
-    const skyboxIndex =
-      this.skyboxController.getValue() === "Leadenhall Market" ? 0 : 1;
+    const skyboxIndex = this.skyboxController.getValue() === "Pure Sky" ? 0 : 1;
 
     // cubemap index
     const cubemapIndex =

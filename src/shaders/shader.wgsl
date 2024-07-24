@@ -28,7 +28,8 @@ struct Transform {
 @group(1) @binding(3) var emissiveMap: texture_2d<f32>;
 @group(1) @binding(4) var occulusionMap: texture_2d<f32>;
 @group(2) @binding(0) var cubeMap: texture_cube<f32>;
-@group(3) @binding(0) var mapSampler: sampler;
+@group(3) @binding(0) var sampler2D: sampler;
+@group(3) @binding(1) var samplerCube: sampler;
 
 @vertex
 fn vs_main(vertData: VertexInput) -> VertexOut {
@@ -71,10 +72,29 @@ fn GeometrySmithGGX(cosTheta: f32, roughness: f32) -> f32 {
   return numerator / denominator;
 }
 
+// ACES: Academy Color Encoding System
+fn ToneMapACES(hdr: vec3f) -> vec3f {
+    let m1 = mat3x3(
+        0.59719, 0.07600, 0.02840,
+        0.35458, 0.90834, 0.13383,
+        0.04823, 0.01566, 0.83777,
+    );
+    let m2 = mat3x3(
+        1.60475, -0.10208, -0.00327,
+        -0.53108,  1.10813, -0.07276,
+        -0.07367, -0.00605,  1.07602,
+    );
+    let v = m1 * hdr;
+    let a = v * (v + 0.0245786) - 0.000090537;
+    let b = v * (0.983729 * v + 0.4329510) + 0.238081;
+    return clamp(m2 * (a / b), vec3(0.0), vec3(1.0));
+}
+
+
 @fragment
 fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
-  let albedo = pow(textureSample(albedoMap, mapSampler, fragData.texCoord).rgb, vec3f(2.2));
-  var normal = textureSample(normalMap, mapSampler, fragData.texCoord).xyz * 2.0 - 1.0;
+  let albedo = pow(textureSample(albedoMap, sampler2D, fragData.texCoord).rgb, vec3f(2.2));
+  var normal = textureSample(normalMap, sampler2D, fragData.texCoord).xyz * 2.0 - 1.0;
   let q1 = dpdx(fragData.pos);
   let q2 = dpdy(fragData.pos);
   let st1 = dpdx(fragData.texCoord);
@@ -84,10 +104,10 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let B = -normalize(cross(N, T));
   let TBN = mat3x3f(T, B, N);
   normal = normalize(TBN * normal);
-  let metalness = textureSample(metallicRoughnessMap, mapSampler, fragData.texCoord).b;
-  let roughness = textureSample(metallicRoughnessMap, mapSampler, fragData.texCoord).g;
-  let emissive = textureSample(emissiveMap, mapSampler, fragData.texCoord);
-  let occulusion = textureSample(occulusionMap, mapSampler, fragData.texCoord).r;
+  let metalness = textureSample(metallicRoughnessMap, sampler2D, fragData.texCoord).b;
+  let roughness = textureSample(metallicRoughnessMap, sampler2D, fragData.texCoord).g;
+  let emissive = textureSample(emissiveMap, sampler2D, fragData.texCoord);
+  let occulusion = textureSample(occulusionMap, sampler2D, fragData.texCoord).r;
 
   let viewDir = normalize(viewPos - fragData.pos);
   var f0 = vec3f(0.04);
@@ -122,13 +142,13 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let ambient = vec3f(0.03) * albedo * occulusion;
   var color = ambient + Lo;
   // HDR Tone Mapping
-  color = color / (color + vec3f(1.0));
+  color = ToneMapACES(color);
   // Gamma Correction
   color = pow(color, vec3f(1.0 / 2.2));
 
   let reflectDir = reflect(viewDir, normal);
   // WebGPU uses a right-handed coordinate system, but cubemaps are an exception, using a left-handed coordinate system
-  let environment = textureSample(cubeMap, mapSampler, reflectDir * vec3f(1, 1, -1)).rgb;
+  let environment = textureSample(cubeMap, samplerCube, reflectDir * vec3f(1, 1, -1)).rgb;
 
   return vec4f(color, 1.0);
 }
