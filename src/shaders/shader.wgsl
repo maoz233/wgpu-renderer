@@ -48,10 +48,14 @@ const PI = 3.14159265359;
 
 // D: Normal Distribution Function
 fn TrowbridgeReitzGGX(normal: vec3f, halfwayDir: vec3f, roughness: f32) -> f32 {
-  let alpha = roughness * roughness;
-  let cosTheta = max(dot(normal, halfwayDir), 0.0);
-  let numerator = pow(alpha, 2);
-  let denominator = pow(PI * pow(cosTheta, 2) * (pow(alpha, 2) - 1.0) + 1.0, 2);
+  let a = roughness * roughness;
+  let a2 = a * a;
+  let NdotH = max(dot(normal, halfwayDir), 0.0);
+  let NdotH2 = NdotH * NdotH;
+
+  let numerator = a2;
+  var denominator = (NdotH2 * (a2 - 1.0) + 1.0);
+  denominator = PI * denominator * denominator;
 
   return numerator / denominator; 
 }
@@ -62,13 +66,21 @@ fn FresnelSchlickApproximation(cosTheta: f32, f0: vec3f) -> vec3f {
 }
 
 // G: Geometry Function
-fn GeometrySmith(normal: vec3f, view: vec3f, lightDir: vec3f, roughness: f32) -> f32 {
-  return GeometrySmithGGX(max(dot(normal, view), 0.0), roughness) * GeometrySmithGGX(max(dot(normal, lightDir), 0.0), roughness);
+fn GeometrySmith(normal: vec3f, viewDir: vec3f, lightDir: vec3f, roughness: f32) -> f32 {
+  let NdotV = max(dot(normal, viewDir), 0.0);
+  let ggx1 = GeometrySmithGGX(NdotV, roughness);
+  let NdotL = max(dot(normal, lightDir), 0.0);
+  let ggx2 = GeometrySmithGGX(NdotL, roughness);
+
+  return ggx1 * ggx2;
 }
 
 fn GeometrySmithGGX(cosTheta: f32, roughness: f32) -> f32 {
+  let r = (roughness + 1.0);
+  let k = (r * r) / 8.0;
+
   let numerator = cosTheta;
-  let denominator = (cosTheta * (1.0 - pow(roughness + 1.0, 2) / 8.0) + pow(roughness + 1.0, 2) / 8.0);
+  let denominator = (cosTheta * (1.0 - k) + k);
 
   return numerator / denominator;
 }
