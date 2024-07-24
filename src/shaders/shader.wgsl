@@ -27,7 +27,7 @@ struct Transform {
 @group(1) @binding(2) var normalMap: texture_2d<f32>;
 @group(1) @binding(3) var<uniform> emissiveFactor: vec3f;
 @group(1) @binding(4) var emissiveMap: texture_2d<f32>;
-@group(1) @binding(5) var occulusionMap: texture_2d<f32>;
+@group(1) @binding(5) var occlusionMap: texture_2d<f32>;
 @group(2) @binding(0) var cubeMap: texture_cube<f32>;
 @group(3) @binding(0) var sampler2D: sampler;
 @group(3) @binding(1) var samplerCube: sampler;
@@ -108,7 +108,7 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let metalness = textureSample(metallicRoughnessMap, sampler2D, fragData.texCoord).b;
   let roughness = textureSample(metallicRoughnessMap, sampler2D, fragData.texCoord).g;
   let emissive = textureSample(emissiveMap, sampler2D, fragData.texCoord).rgb * emissiveFactor;
-  let occulusion = textureSample(occulusionMap, sampler2D, fragData.texCoord).r;
+  let occlusion = textureSample(occlusionMap, sampler2D, fragData.texCoord).r;
 
   let viewDir = normalize(viewPos - fragData.pos);
   var f0 = vec3f(0.04);
@@ -140,7 +140,7 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
     Lo += (kD * albedo / PI + specular) * radiance * dot(normal, lightDir);
   }
 
-  let ambient = vec3f(0.03) * albedo * occulusion + emissive;
+  let ambient = vec3f(0.03) * albedo * occlusion + emissive;
   var color = ambient + Lo;
   // HDR Tone Mapping
   color = ToneMapACES(color);
