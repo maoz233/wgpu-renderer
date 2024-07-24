@@ -335,6 +335,11 @@ export default class Renderer {
         {
           binding: 3,
           visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: "uniform" as GPUBufferBindingType },
+        },
+        {
+          binding: 4,
+          visibility: GPUShaderStage.FRAGMENT,
           texture: {
             sampleType: "float" as GPUTextureSampleType,
             viewDimension: "2d" as GPUTextureViewDimension,
@@ -342,7 +347,7 @@ export default class Renderer {
           },
         },
         {
-          binding: 4,
+          binding: 5,
           visibility: GPUShaderStage.FRAGMENT,
           texture: {
             sampleType: "float" as GPUTextureSampleType,
@@ -566,7 +571,19 @@ export default class Renderer {
     const normalImageBitmap = await loadImageBitmap(
       this.geometries[0].textures.normalURI
     );
-    const emissive = this.geometries[0].textures.emissive;
+    const emissive = new Float32Array(this.geometries[0].textures.emissive);
+    const emissiveBuffer = this.createBuffer(
+      `GPU Uniform Buffer: Emissive Factor`,
+      4 * Float32Array.BYTES_PER_ELEMENT,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    );
+    this.device.queue.writeBuffer(
+      emissiveBuffer,
+      0,
+      emissive.buffer,
+      emissive.byteOffset,
+      emissive.byteLength
+    );
     const emissiveImageBitmap = await loadImageBitmap(
       this.geometries[0].textures.emissiveURI
     );
@@ -673,10 +690,16 @@ export default class Renderer {
           },
           {
             binding: 3,
-            resource: emissiveTextureView,
+            resource: {
+              buffer: emissiveBuffer,
+            },
           },
           {
             binding: 4,
+            resource: emissiveTextureView,
+          },
+          {
+            binding: 5,
             resource: occlusionTextureView,
           },
         ],
