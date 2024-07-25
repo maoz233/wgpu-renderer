@@ -106,7 +106,7 @@ fn ToneMapACES(hdr: vec3f) -> vec3f {
 
 @fragment
 fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
-  let albedo = pow(textureSample(albedoMap, sampler2D, fragData.texCoord).rgb, vec3f(2.2));
+  let albedo = textureSample(albedoMap, sampler2D, fragData.texCoord).rgb;
   var normal = textureSample(normalMap, sampler2D, fragData.texCoord).xyz * 2.0 - 1.0;
   let q1 = dpdx(fragData.pos);
   let q2 = dpdy(fragData.pos);
@@ -159,7 +159,7 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let diffuse  = irradiance * albedo;
   let ambient =( kD * diffuse) * occlusion;
 
-  var color = ambient + Lo  + emissive;
+  var color = vec3f(0.03) * occlusion + Lo + emissive;
   // HDR Tone Mapping
   color = ToneMapACES(color);
   // Gamma Correction
