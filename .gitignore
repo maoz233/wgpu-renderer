@@ -1,6 +1,9 @@
 # node moudles
 node_modules/
 
+# dist
+dist/
+
 # VS Code
 .vscode/
 
