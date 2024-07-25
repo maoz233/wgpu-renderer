@@ -28,7 +28,7 @@ struct Transform {
 @group(1) @binding(3) var<uniform> emissiveFactor: vec3f;
 @group(1) @binding(4) var emissiveMap: texture_2d<f32>;
 @group(1) @binding(5) var occlusionMap: texture_2d<f32>;
-@group(2) @binding(0) var cubeMap: texture_cube<f32>;
+@group(2) @binding(0) var irradianceMap: texture_cube<f32>;
 @group(3) @binding(0) var sampler2D: sampler;
 @group(3) @binding(1) var samplerCube: sampler;
 
@@ -61,8 +61,8 @@ fn TrowbridgeReitzGGX(normal: vec3f, halfwayDir: vec3f, roughness: f32) -> f32 {
 }
 
 // F: Fresnel Equation
-fn FresnelSchlickApproximation(cosTheta: f32, f0: vec3f) -> vec3f {
-  return f0 + (1.0 - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+fn FresnelSchlickApproximation(cosTheta: f32, f0: vec3f, roughness: f32) -> vec3f {
+  return f0 + (max(vec3f(1.0 -roughness), f0) - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
 // G: Geometry Function
@@ -138,7 +138,7 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
 
     // BRDF: Cook-Torrance
     let D = TrowbridgeReitzGGX(normal, halfwayDir, roughness);
-    let F = FresnelSchlickApproximation(max(dot(halfwayDir, viewDir), 0.0), f0);
+    let F = FresnelSchlickApproximation(max(dot(halfwayDir, viewDir), 0.0), f0, roughness);
     let G = GeometrySmith(normal, viewDir, lightDir, roughness);
 
     let kS = F;
@@ -152,16 +152,18 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
     Lo += (kD * albedo / PI + specular) * radiance * dot(normal, lightDir);
   }
 
-  let ambient = vec3f(0.03) * albedo * occlusion + emissive;
-  var color = ambient + Lo;
+  let kS = FresnelSchlickApproximation(max(dot(normal, viewDir), 0.0), f0, roughness);
+  var kD = vec3f(1.0) - kS;
+  kD *= 1.0 - metalness;
+  let irradiance = textureSample(irradianceMap, samplerCube, normal).rgb;
+  let diffuse  = irradiance * albedo;
+  let ambient =( kD * diffuse) * occlusion;
+
+  var color = ambient + Lo  + emissive;
   // HDR Tone Mapping
   color = ToneMapACES(color);
   // Gamma Correction
   color = pow(color, vec3f(1.0 / 2.2));
-
-  let reflectDir = reflect(viewDir, normal);
-  // WebGPU uses a right-handed coordinate system, but cubemaps are an exception, using a left-handed coordinate system
-  let environment = textureSample(cubeMap, samplerCube, reflectDir * vec3f(1, 1, -1)).rgb;
 
   return vec4f(color, 1.0);
 }

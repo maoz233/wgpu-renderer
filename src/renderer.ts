@@ -2,6 +2,7 @@ import shaderCode from "@/shaders/shader.wgsl";
 import mipmapShaderCode from "@/shaders/mipmap.wgsl";
 import skyboxShaderCode from "@/shaders/skybox.wgsl";
 import equirectangularShaderCode from "@/shaders/equirectangular.wgsl";
+import irradiancemapShaderCode from "@/shaders/irradiancemap.wgsl";
 import { mat4, utils, vec3 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import {
@@ -712,7 +713,8 @@ export default class Renderer {
       const renderPipelineIndex = i & 2 ? 1 : 0;
       const skyboxIndex = i & 4 ? 1 : 0;
 
-      const cubeTexture = this.createTextureCubeFromHDR(this.hdrs[skyboxIndex]);
+      let cubeTexture = this.createTextureCubeFromHDR(this.hdrs[skyboxIndex]);
+      cubeTexture = this.generateIrradianceMap()(this.device, cubeTexture, 32);
 
       const cubeTextureView = cubeTexture.createView({
         label: `GPU Texture View: Cube ${skyboxIndex}`,
@@ -1323,7 +1325,9 @@ export default class Renderer {
         size: [size, size, 6],
         format: "rgba32float",
         usage:
-          GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.STORAGE_BINDING |
+          GPUTextureUsage.COPY_SRC,
       });
 
       const dstTextureView = dstTexture.createView({
@@ -1355,6 +1359,141 @@ export default class Renderer {
 
       const pass = encoder.beginComputePass({
         label: "GPU Compute Pass: Cubemap Generation",
+      });
+      pass.setPipeline(computePipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.dispatchWorkgroups(workgroupsNum, workgroupsNum, 6);
+      pass.end();
+
+      device.queue.submit([encoder.finish()]);
+
+      return dstTexture;
+    };
+  }
+
+  private generateIrradianceMap(): (
+    d: GPUDevice,
+    t: GPUTexture,
+    s: number
+  ) => GPUTexture {
+    let module: GPUShaderModule;
+    let computePipeline: GPUComputePipeline;
+
+    return function generateIrradianceMap(
+      device: GPUDevice,
+      texture: GPUTexture,
+      size: number
+    ): GPUTexture {
+      if (!module) {
+        module = device.createShaderModule({
+          label: "GPU Shader Module: Irradiance Cubemap Generation",
+          code: irradiancemapShaderCode,
+        });
+      }
+
+      if (!computePipeline) {
+        const bindGroupLayout = device.createBindGroupLayout({
+          label: "GPU Bind Group Layout: Irradiance Cubemap Generation",
+          entries: [
+            {
+              binding: 0,
+              visibility: GPUShaderStage.COMPUTE,
+              storageTexture: {
+                access: "read-only" as GPUStorageTextureAccess,
+                format: "rgba32float" as GPUTextureFormat,
+                viewDimension: "2d-array" as GPUTextureViewDimension,
+              },
+            },
+            {
+              binding: 1,
+              visibility: GPUShaderStage.COMPUTE,
+              storageTexture: {
+                access: "write-only" as GPUStorageTextureAccess,
+                format: "rgba32float" as GPUTextureFormat,
+                viewDimension: "2d-array" as GPUTextureViewDimension,
+              },
+            },
+          ],
+        });
+        const computePipelineLayout = device.createPipelineLayout({
+          label: "GPU Compute Pipeline Layout: Irradiance Cubemap Generation",
+          bindGroupLayouts: [bindGroupLayout],
+        });
+        computePipeline = device.createComputePipeline({
+          label: "GPU Compute Pipeline: Irradiance Cubemap Generation",
+          layout: computePipelineLayout,
+          compute: {
+            module,
+            entryPoint: "compute_main",
+          },
+        });
+      }
+
+      const srcTexture = device.createTexture({
+        label: "GPU Texture: Irradiance Cubemap Generation Source",
+        size: [texture.width, texture.height, 6],
+        format: "rgba32float",
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.STORAGE_BINDING |
+          GPUTextureUsage.COPY_DST,
+      });
+
+      const copyCommandEncoder = device.createCommandEncoder();
+      copyCommandEncoder.copyTextureToTexture(
+        {
+          texture,
+        },
+        {
+          texture: srcTexture,
+        },
+        [texture.width, texture.height, 6]
+      );
+      device.queue.submit([copyCommandEncoder.finish()]);
+
+      const srcTextureView = srcTexture.createView({
+        label: "GPU Texture View: Irradiance Cubemap Generation Source",
+        format: "rgba32float",
+        dimension: "2d-array",
+      });
+
+      const dstTexture = device.createTexture({
+        label: "GPU Texture: Irradiance Cubemap Generation Destination",
+        size: [size, size, 6],
+        format: "rgba32float",
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+      });
+
+      const dstTextureView = dstTexture.createView({
+        label: "GPU Texture View: Irradiance Cubemap Generation Destination",
+        format: "rgba32float",
+        dimension: "2d-array",
+      });
+
+      const bindGroup = device.createBindGroup({
+        label: "GPU Bind Group: Cubemap Generation",
+        layout: computePipeline.getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: srcTextureView,
+          },
+          {
+            binding: 1,
+            resource: dstTextureView,
+          },
+        ],
+      });
+
+      const encoder = device.createCommandEncoder({
+        label: "GPU Command Encoder: Irradiance Cubemap Generation",
+      });
+
+      const workgroupsNum = Math.floor((size + 15) / 16);
+
+      const pass = encoder.beginComputePass({
+        label: "GPU Compute Pass: Irradiance Cubemap Generation",
       });
       pass.setPipeline(computePipeline);
       pass.setBindGroup(0, bindGroup);
