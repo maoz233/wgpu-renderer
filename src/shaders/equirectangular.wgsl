@@ -22,7 +22,7 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
         return;
     }
 
-    var faces: array<Face, 6> = array(
+    let faces: array<Face, 6> = array(
         // FACES +X
         Face(
             vec3(1.0, 0.0, 0.0),  // forward
@@ -75,7 +75,7 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     let eqPixel = vec2<i32>(eqUV * vec2<f32>(textureDimensions(src)));
 
     // We use textureLoad() as textureSample() is not allowed in compute shaders
-    var sample = textureLoad(src, eqPixel, 0);
+    let sample = textureLoad(src, eqPixel, 0);
 
     textureStore(dst, gid.xy, gid.z, sample);
 }
