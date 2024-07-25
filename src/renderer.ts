@@ -623,7 +623,9 @@ export default class Renderer {
         metallicRoughnessMipLevelCount
       );
       const metallicRoughnessTextureView = metallicRoughnessTexture.createView({
-        label: `GPU Texture View: Metallic Roughness ${mipIndex && "with Mipmaps"}`,
+        label: `GPU Texture View: Metallic Roughness ${
+          mipIndex && "with Mipmaps"
+        }`,
       });
 
       const noramlMipLevelCount = mipIndex
@@ -672,9 +674,9 @@ export default class Renderer {
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 1: Material ${
-          mipIndex && "with Mipmaps"
-        } ${renderPipelineIndex && "with MSAA"}`,
+        label: `GPU Bind Group 1: Material ${mipIndex && "with Mipmaps"} ${
+          renderPipelineIndex && "with MSAA"
+        }`,
         layout: this.renderPipelines[renderPipelineIndex].getBindGroupLayout(1),
         entries: [
           {
@@ -708,15 +710,20 @@ export default class Renderer {
       this.bindGroups[1].push(bindGroup);
     }
 
+    let cubeTextures: GPUTexture[] = [];
+    for (let i = 0; i < 2; ++i) {
+      let cubeTexture = this.createTextureCubeFromHDR(this.hdrs[i]);
+      cubeTextures.push(
+        this.generateIrradianceMap()(this.device, cubeTexture, 32)
+      );
+    }
+
     for (let i = 0; i < 8; ++i) {
       const mipIndex = i & 1 ? 1 : 0;
       const renderPipelineIndex = i & 2 ? 1 : 0;
       const skyboxIndex = i & 4 ? 1 : 0;
 
-      let cubeTexture = this.createTextureCubeFromHDR(this.hdrs[skyboxIndex]);
-      cubeTexture = this.generateIrradianceMap()(this.device, cubeTexture, 32);
-
-      const cubeTextureView = cubeTexture.createView({
+      const cubeTextureView = cubeTextures[skyboxIndex].createView({
         label: `GPU Texture View: Cube ${skyboxIndex}`,
         dimension: "cube",
       });
