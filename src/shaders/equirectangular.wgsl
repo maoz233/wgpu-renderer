@@ -63,11 +63,11 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
 
     // Get texture coords relative to cubemap face
     let dstDimensions = vec2<f32>(textureDimensions(dst));
-    let cube_uv = vec2<f32>(gid.xy) / dstDimensions * 2.0 - 1.0;
+    let cubeUV = vec2<f32>(gid.xy) / dstDimensions * 2.0 - 1.0;
 
-    // Get spherical coordinate from cube_uv
+    // Get spherical coordinate from cubeUV
     let face = faces[gid.z];
-    let spherical = normalize(face.forward + face.right * cube_uv.x + face.up * cube_uv.y);
+    let spherical = normalize(face.forward + face.right * cubeUV.x + face.up * cubeUV.y);
 
     // Get coordinate on the equirectangular texture
     let invAtan = vec2(0.1591, 0.3183);
