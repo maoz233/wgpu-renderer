@@ -712,9 +712,8 @@ export default class Renderer {
 
     let cubeTextures: GPUTexture[] = [];
     for (let i = 0; i < 2; ++i) {
-      let cubeTexture = this.createTextureCubeFromHDR(this.hdrs[i]);
       cubeTextures.push(
-        this.generateIrradianceMap()(this.device, cubeTexture, 32)
+        this.generateIrradianceMap()(this.device, this.hdrs[i], 32)
       );
     }
 
@@ -1380,7 +1379,7 @@ export default class Renderer {
 
   private generateIrradianceMap(): (
     d: GPUDevice,
-    t: GPUTexture,
+    h: HDR,
     s: number
   ) => GPUTexture {
     let module: GPUShaderModule;
@@ -1388,7 +1387,7 @@ export default class Renderer {
 
     return function generateIrradianceMap(
       device: GPUDevice,
-      texture: GPUTexture,
+      hdr: HDR,
       size: number
     ): GPUTexture {
       if (!module) {
@@ -1405,10 +1404,10 @@ export default class Renderer {
             {
               binding: 0,
               visibility: GPUShaderStage.COMPUTE,
-              storageTexture: {
-                access: "read-only" as GPUStorageTextureAccess,
-                format: "rgba32float" as GPUTextureFormat,
-                viewDimension: "2d-array" as GPUTextureViewDimension,
+              texture: {
+                sampleType: "unfilterable-float" as GPUTextureSampleType,
+                viewDimension: "2d" as GPUTextureViewDimension,
+                multisampled: false,
               },
             },
             {
@@ -1438,30 +1437,31 @@ export default class Renderer {
 
       const srcTexture = device.createTexture({
         label: "GPU Texture: Irradiance Cubemap Generation Source",
-        size: [texture.width, texture.height, 6],
+        size: [hdr.width, hdr.height],
         format: "rgba32float",
-        usage:
-          GPUTextureUsage.TEXTURE_BINDING |
-          GPUTextureUsage.STORAGE_BINDING |
-          GPUTextureUsage.COPY_DST,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       });
-
-      const copyCommandEncoder = device.createCommandEncoder();
-      copyCommandEncoder.copyTextureToTexture(
-        {
-          texture,
-        },
+      device.queue.writeTexture(
         {
           texture: srcTexture,
+          mipLevel: 0,
+          origin: [0, 0, 0],
         },
-        [texture.width, texture.height, 6]
+        hdr.data,
+        {
+          offset: 0,
+          bytesPerRow: hdr.width * 4 * Float32Array.BYTES_PER_ELEMENT,
+          rowsPerImage: hdr.height,
+        },
+        {
+          width: hdr.width,
+          height: hdr.height,
+        }
       );
-      device.queue.submit([copyCommandEncoder.finish()]);
-
       const srcTextureView = srcTexture.createView({
         label: "GPU Texture View: Irradiance Cubemap Generation Source",
         format: "rgba32float",
-        dimension: "2d-array",
+        dimension: "2d",
       });
 
       const dstTexture = device.createTexture({

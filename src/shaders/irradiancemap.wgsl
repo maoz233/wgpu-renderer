@@ -6,13 +6,8 @@ struct Face {
     right: vec3f,
 }
 
-@group(0)
-@binding(0)
-var src: texture_storage_2d_array<rgba32float, read>;
-
-@group(0)
-@binding(1)
-var dst: texture_storage_2d_array<rgba32float, write>;
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var dst: texture_storage_2d_array<rgba32float, write>;
 
 @compute
 @workgroup_size(16, 16, 1)
@@ -69,8 +64,8 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     let face = faces[gid.z];
     let spherical = normalize(face.forward + face.right * cubeUV.x + face.up * cubeUV.y);
 
-    var irradiance = vec3(0.0);   
-    
+    var irradiance = vec3(0.0);
+
     // tangent space calculation from origin point
     var up    = vec3(0.0, 1.0, 0.0);
     let right = normalize(cross(up, spherical));
