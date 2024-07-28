@@ -1,4 +1,5 @@
 const PI: f32 = 3.14159265359;
+const invAtan = vec2(0.1591, 0.3183);
 
 struct Face {
     forward: vec3f,
@@ -9,8 +10,7 @@ struct Face {
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var dst: texture_storage_2d_array<rgba32float, write>;
 
-@compute
-@workgroup_size(16, 16, 1)
+@compute @workgroup_size(16, 16, 1)
 fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     // If texture size is not divisible by 32, we need to make sure we don't try to write to pixels that don't exist.
     if gid.x >= u32(textureDimensions(dst).x) {
@@ -65,7 +65,6 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     let spherical = normalize(face.forward + face.right * cubeUV.x + face.up * cubeUV.y);
 
     // Get coordinate on the equirectangular texture
-    let invAtan = vec2(0.1591, 0.3183);
     let eqUV = vec2(atan2(spherical.z, spherical.x), asin(spherical.y)) * invAtan + 0.5;
     let eqPixel = vec2<i32>(eqUV * vec2<f32>(textureDimensions(src)));
 
