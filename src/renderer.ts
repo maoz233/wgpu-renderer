@@ -900,7 +900,11 @@ export default class Renderer {
 
     const skyboxTextureViews = [];
     for (let i = 0; i < 2; ++i) {
-      const skyboxTexture = this.createTextureCubeFromHDR(this.hdrs[i]);
+      const skyboxTexture = this.generateCubemap()(
+        this.device,
+        this.hdrs[i],
+        1440
+      );
 
       skyboxTextureViews.push(
         skyboxTexture.createView({
@@ -984,12 +988,6 @@ export default class Renderer {
     });
 
     this.copySourceToTexture(this.device, source, texture);
-
-    return texture;
-  }
-
-  private createTextureCubeFromHDR(hdr: HDR): GPUTexture {
-    const texture = this.generateCubemap()(this.device, hdr, 1440);
 
     return texture;
   }

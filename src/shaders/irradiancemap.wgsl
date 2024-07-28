@@ -1,4 +1,5 @@
 const PI: f32 = 3.14159265359;
+const invAtan = vec2(0.1591, 0.3183);
 
 struct Face {
     forward: vec3f,
@@ -64,15 +65,12 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     let face = faces[gid.z];
     let spherical = normalize(face.forward + face.right * cubeUV.x + face.up * cubeUV.y);
 
-    var irradiance = vec3(0.0);
-
     // tangent space calculation from origin point
     var up    = vec3(0.0, 1.0, 0.0);
     let right = normalize(cross(up, spherical));
     up = normalize(cross(spherical, right));
 
-    let invAtan = vec2(0.1591, 0.3183);
-
+    var irradiance = vec3(0.0);
     let sampleDelta = 0.025;
     var nrSamples = 0;
     for(var phi = 0.0; phi < 2.0 * PI; phi += sampleDelta)
@@ -86,7 +84,7 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
             let eqUV = vec2(atan2(sampleVec.z, sampleVec.x), asin(sampleVec.y)) * invAtan + 0.5;
             let eqPixel = vec2<i32>(eqUV * vec2<f32>(textureDimensions(src)));
             // We use textureLoad() as textureSample() is not allowed in compute shaders
-            irradiance += textureLoad(src, eqPixel, gid.z).rgb * cos(theta) * sin(theta);
+            irradiance += textureLoad(src, eqPixel, 0).rgb * cos(theta) * sin(theta);
             nrSamples++;
         }
     }
