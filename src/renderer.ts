@@ -612,6 +612,7 @@ export default class Renderer {
       const baseColorTexture = this.createTexture2DFromSource(
         `GPU Texture: Base Color ${mipIndex && "with Mipmaps"}`,
         baseColorImageBitmap,
+        "rgba8unorm-srgb",
         baseColorMipLevelCount
       );
       const baseColorTextureView = baseColorTexture.createView({
@@ -627,6 +628,7 @@ export default class Renderer {
       const metallicRoughnessTexture = this.createTexture2DFromSource(
         `GPU Texture: Metallic Roughness ${mipIndex && "with Mipmaps"}`,
         metallicRoughnessImageBitmap,
+        "rgba8unorm",
         metallicRoughnessMipLevelCount
       );
       const metallicRoughnessTextureView = metallicRoughnessTexture.createView({
@@ -644,6 +646,7 @@ export default class Renderer {
       const normalTexture = this.createTexture2DFromSource(
         `GPU Texture: Noraml ${mipIndex && "with Mipmaps"}`,
         normalImageBitmap,
+        "rgba8unorm",
         noramlMipLevelCount
       );
       const normalTextureView = normalTexture.createView({
@@ -659,6 +662,7 @@ export default class Renderer {
       const emissiveTexture = this.createTexture2DFromSource(
         `GPU Texture: Emissive ${mipIndex && "with Mipmaps"}`,
         emissiveImageBitmap,
+        "rgba8unorm-srgb",
         emissiveMipLevelCount
       );
       const emissiveTextureView = emissiveTexture.createView({
@@ -674,6 +678,7 @@ export default class Renderer {
       const occlusionTexture = this.createTexture2DFromSource(
         `GPU Texture: Occlusion ${mipIndex && "with Mipmaps"}`,
         occlusionImageBitmap,
+        "rgba8unorm",
         occlusionMipLevelCount
       );
       const occlusionTextureView = occlusionTexture.createView({
@@ -974,6 +979,7 @@ export default class Renderer {
   private createTexture2DFromSource(
     label: string,
     source: GPUImageCopyExternalImageSource,
+    format: GPUTextureFormat,
     mipLevelCount: number
   ): GPUTexture {
     let width: number;
@@ -991,7 +997,7 @@ export default class Renderer {
 
     const texture = this.device.createTexture({
       label,
-      format: "rgba8unorm",
+      format,
       mipLevelCount,
       size: [width, height],
       usage:
