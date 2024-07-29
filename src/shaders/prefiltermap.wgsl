@@ -10,6 +10,7 @@ struct Face {
 }
 
 @group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var roughness: f32;
 @group(0) @binding(1) var dst: texture_storage_2d_array<rgba32float, write>;
 
 // D: Normal Distribution Function
@@ -117,13 +118,38 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     // Get spherical coordinate from cubeUV
     let face = faces[gid.z];
     let spherical = normalize(face.forward + face.right * cubeUV.x + face.up * cubeUV.y);
-    let eqUV = vec2(atan2(sampleVec.z, sampleVec.x), asin(sampleVec.y)) * invAtan + 0.5;
 
     let N = spherical;
     let R = N;
     let V = R;
 
-    let eqPixel = vec2<i32>(eqUV * vec2<f32>(textureDimensions(src)));
+    let prefilteredColor = vec3f(0.0);
+    let totalWeight = 0.0;
 
-    textureStore(dst, gid.xy, gid.z, vec4f(eqPixel, 1.0));
+    for(var i = 0u; i < SAMPLE_COUNT; ++i) {
+      let Xi = Hammersley(i, SAMPLE_COUNT);
+      let H = ImportanceSampleGGX(Xi, N, roughness);
+      let L = normalize(2.0 * dot(V, H) * H - V);
+
+      let NdotL = max(dot(N, L), 0.0);
+      if(NdotL > 0.0) {
+        let D = TrowbridgeReitzGGX(N, H, roughness);
+        let NdotH = max(dot(N, H), 0.0);
+        let HdotV = max(dot(H, V), 0.0);
+        let pdf = D * NdotH / (4.0 * HdotV) + 0.0001; 
+
+        let resolution = 512.0; // resolution of source cubemap (per face)
+        let saTexel  = 4.0 * PI / (6.0 * resolution * resolution);
+        let saSample = 1.0 / (f32(SAMPLE_COUNT) * pdf + 0.0001);
+
+        let mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
+
+        let eqUV = vec2(atan2(L.z, L.x), asin(L.y)) * invAtan + 0.5;
+        let eqPixel = vec2<i32>(eqUV * vec2<f32>(textureDimensions(src)));
+        prefilteredColor += textureLoad(src, eqPixel, mipLevel).rgb * NdotL;
+        totalWeight += NdotL;
+      } 
+    }
+
+    textureStore(dst, gid.xy, gid.z, vec4f(prefilteredColor/totalWeight, 1.0));
 }
