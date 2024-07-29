@@ -106,7 +106,7 @@ fn ToneMapACES(hdr: vec3f) -> vec3f {
 
 @fragment
 fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
-  let albedo = textureSample(albedoMap, sampler2D, fragData.texCoord).rgb;
+  let albedo = pow(textureSample(albedoMap, sampler2D, fragData.texCoord).rgb, vec3f(2.2));
   var normal = textureSample(normalMap, sampler2D, fragData.texCoord).xyz * 2.0 - 1.0;
   let q1 = dpdx(fragData.pos);
   let q2 = dpdy(fragData.pos);
@@ -119,7 +119,7 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   normal = normalize(TBN * normal);
   let metalness = textureSample(metallicRoughnessMap, sampler2D, fragData.texCoord).b;
   let roughness = textureSample(metallicRoughnessMap, sampler2D, fragData.texCoord).g;
-  let emissive = textureSample(emissiveMap, sampler2D, fragData.texCoord).rgb * emissiveFactor;
+  let emissive = pow(textureSample(emissiveMap, sampler2D, fragData.texCoord).rgb, vec3f(2.2)) * emissiveFactor;
   let occlusion = textureSample(occlusionMap, sampler2D, fragData.texCoord).r;
 
   let viewDir = normalize(viewPos - fragData.pos);
@@ -155,11 +155,12 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let kS = FresnelSchlickApproximation(max(dot(normal, viewDir), 0.0), f0, roughness);
   var kD = vec3f(1.0) - kS;
   kD *= 1.0 - metalness;
-  let irradiance = textureSample(irradianceMap, samplerCube, normal).rgb;
+  let reflectDir = reflect(-viewDir, normal);
+  let irradiance = textureSample(irradianceMap, samplerCube, reflectDir * vec3f(1.0, 1.0, -1.0)).rgb;
   let diffuse  = irradiance * albedo;
-  let ambient =( kD * diffuse) * occlusion;
+  let ambient =(kD * diffuse) * occlusion;
 
-  var color = vec3f(0.03) * occlusion + Lo + emissive;
+  var color = ambient + Lo + emissive;
   // HDR Tone Mapping
   color = ToneMapACES(color);
   // Gamma Correction

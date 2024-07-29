@@ -3,6 +3,7 @@ import mipmapShaderCode from "@/shaders/mipmap.wgsl";
 import skyboxShaderCode from "@/shaders/skybox.wgsl";
 import equirectangularShaderCode from "@/shaders/equirectangular.wgsl";
 import irradiancemapShaderCode from "@/shaders/irradiancemap.wgsl";
+import prefiltermapShaderCode from "@/shaders/prefiltermap.wgsl";
 import { mat4, utils, vec3 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import {
@@ -13,6 +14,12 @@ import {
 import Camera from "@/camera";
 import glTFLoader, { type Geometry } from "@/glTF";
 import HDRLoader, { type HDR } from "@/hdr";
+
+enum CubemapType {
+  SKYBOX = "Skybox",
+  IRRADIANCE = "Irradiance",
+  PREFILTER = "Prefilter",
+}
 
 const fpsAvg = new RollingAverage();
 const cpuTimeAvg = new RollingAverage();
@@ -713,7 +720,12 @@ export default class Renderer {
     let cubeTextures: GPUTexture[] = [];
     for (let i = 0; i < 2; ++i) {
       cubeTextures.push(
-        this.generateIrradianceMap()(this.device, this.hdrs[i], 32)
+        this.generateCubemap()(
+          this.device,
+          this.hdrs[i],
+          32,
+          CubemapType.IRRADIANCE
+        )
       );
     }
 
@@ -903,7 +915,8 @@ export default class Renderer {
       const skyboxTexture = this.generateCubemap()(
         this.device,
         this.hdrs[i],
-        1440
+        1440,
+        CubemapType.SKYBOX
       );
 
       skyboxTextureViews.push(
@@ -1241,20 +1254,41 @@ export default class Renderer {
     };
   }
 
-  private generateCubemap(): (d: GPUDevice, h: HDR, s: number) => GPUTexture {
-    let module: GPUShaderModule;
+  private generateCubemap(): (
+    d: GPUDevice,
+    h: HDR,
+    s: number,
+    t: CubemapType
+  ) => GPUTexture {
+    const modules = new Map<CubemapType, GPUShaderModule>();
     let computePipeline: GPUComputePipeline;
 
     return function generateCubemap(
       device: GPUDevice,
       hdr: HDR,
-      size: number
+      size: number,
+      type: CubemapType
     ): GPUTexture {
-      if (!module) {
-        module = device.createShaderModule({
-          label: "GPU Shader Module: Cubemap Generation",
-          code: equirectangularShaderCode,
+      if (!modules.has(type)) {
+        let code: string;
+        switch (type) {
+          case CubemapType.SKYBOX:
+            code = equirectangularShaderCode;
+            break;
+          case CubemapType.IRRADIANCE:
+            code = irradiancemapShaderCode;
+            break;
+          case CubemapType.PREFILTER:
+            code = prefiltermapShaderCode;
+            break;
+          default:
+            throw new Error(`Invliad cubemap type: ${type}`);
+        }
+        const module = device.createShaderModule({
+          label: `GPU Shader Module: Cubemap Generation ${type}`,
+          code,
         });
+        modules.set(type, module);
       }
 
       if (!computePipeline) {
@@ -1289,7 +1323,7 @@ export default class Renderer {
           label: "GPU Compute Pipeline: Cubemap Generation",
           layout: computePipelineLayout,
           compute: {
-            module,
+            module: modules.get(type),
             entryPoint: "compute_main",
           },
         });
@@ -1363,142 +1397,6 @@ export default class Renderer {
 
       const pass = encoder.beginComputePass({
         label: "GPU Compute Pass: Cubemap Generation",
-      });
-      pass.setPipeline(computePipeline);
-      pass.setBindGroup(0, bindGroup);
-      pass.dispatchWorkgroups(workgroupsNum, workgroupsNum, 6);
-      pass.end();
-
-      device.queue.submit([encoder.finish()]);
-
-      return dstTexture;
-    };
-  }
-
-  private generateIrradianceMap(): (
-    d: GPUDevice,
-    h: HDR,
-    s: number
-  ) => GPUTexture {
-    let module: GPUShaderModule;
-    let computePipeline: GPUComputePipeline;
-
-    return function generateIrradianceMap(
-      device: GPUDevice,
-      hdr: HDR,
-      size: number
-    ): GPUTexture {
-      if (!module) {
-        module = device.createShaderModule({
-          label: "GPU Shader Module: Irradiance Cubemap Generation",
-          code: irradiancemapShaderCode,
-        });
-      }
-
-      if (!computePipeline) {
-        const bindGroupLayout = device.createBindGroupLayout({
-          label: "GPU Bind Group Layout: Irradiance Cubemap Generation",
-          entries: [
-            {
-              binding: 0,
-              visibility: GPUShaderStage.COMPUTE,
-              texture: {
-                sampleType: "unfilterable-float" as GPUTextureSampleType,
-                viewDimension: "2d" as GPUTextureViewDimension,
-                multisampled: false,
-              },
-            },
-            {
-              binding: 1,
-              visibility: GPUShaderStage.COMPUTE,
-              storageTexture: {
-                access: "write-only" as GPUStorageTextureAccess,
-                format: "rgba32float" as GPUTextureFormat,
-                viewDimension: "2d-array" as GPUTextureViewDimension,
-              },
-            },
-          ],
-        });
-        const computePipelineLayout = device.createPipelineLayout({
-          label: "GPU Compute Pipeline Layout: Irradiance Cubemap Generation",
-          bindGroupLayouts: [bindGroupLayout],
-        });
-        computePipeline = device.createComputePipeline({
-          label: "GPU Compute Pipeline: Irradiance Cubemap Generation",
-          layout: computePipelineLayout,
-          compute: {
-            module,
-            entryPoint: "compute_main",
-          },
-        });
-      }
-
-      const srcTexture = device.createTexture({
-        label: "GPU Texture: Irradiance Cubemap Generation Source",
-        size: [hdr.width, hdr.height],
-        format: "rgba32float",
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      });
-      device.queue.writeTexture(
-        {
-          texture: srcTexture,
-          mipLevel: 0,
-          origin: [0, 0, 0],
-        },
-        hdr.data,
-        {
-          offset: 0,
-          bytesPerRow: hdr.width * 4 * Float32Array.BYTES_PER_ELEMENT,
-          rowsPerImage: hdr.height,
-        },
-        {
-          width: hdr.width,
-          height: hdr.height,
-        }
-      );
-      const srcTextureView = srcTexture.createView({
-        label: "GPU Texture View: Irradiance Cubemap Generation Source",
-        format: "rgba32float",
-        dimension: "2d",
-      });
-
-      const dstTexture = device.createTexture({
-        label: "GPU Texture: Irradiance Cubemap Generation Destination",
-        size: [size, size, 6],
-        format: "rgba32float",
-        usage:
-          GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
-      });
-
-      const dstTextureView = dstTexture.createView({
-        label: "GPU Texture View: Irradiance Cubemap Generation Destination",
-        format: "rgba32float",
-        dimension: "2d-array",
-      });
-
-      const bindGroup = device.createBindGroup({
-        label: "GPU Bind Group: Cubemap Generation",
-        layout: computePipeline.getBindGroupLayout(0),
-        entries: [
-          {
-            binding: 0,
-            resource: srcTextureView,
-          },
-          {
-            binding: 1,
-            resource: dstTextureView,
-          },
-        ],
-      });
-
-      const encoder = device.createCommandEncoder({
-        label: "GPU Command Encoder: Irradiance Cubemap Generation",
-      });
-
-      const workgroupsNum = Math.floor((size + 15) / 16);
-
-      const pass = encoder.beginComputePass({
-        label: "GPU Compute Pass: Irradiance Cubemap Generation",
       });
       pass.setPipeline(computePipeline);
       pass.setBindGroup(0, bindGroup);
