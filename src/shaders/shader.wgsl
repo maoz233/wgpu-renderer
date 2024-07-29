@@ -142,6 +142,8 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let ambient =(kD * diffuse) * occlusion;
 
   var color = ambient + Lo + emissive;
+  // Gamma Correction
+  color = pow(color, vec3f(1.0/2.2));
 
   return vec4f(color, 1.0);
 }
