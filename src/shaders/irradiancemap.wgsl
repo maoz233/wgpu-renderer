@@ -10,8 +10,7 @@ struct Face {
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var dst: texture_storage_2d_array<rgba32float, write>;
 
-@compute
-@workgroup_size(16, 16, 1)
+@compute @workgroup_size(16, 16, 1)
 fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     // If texture size is not divisible by 32, we need to make sure we don't try to write to pixels that don't exist.
     if gid.x >= u32(textureDimensions(dst).x) {
@@ -73,10 +72,8 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     var irradiance = vec3(0.0);
     let sampleDelta = 0.025;
     var nrSamples = 0;
-    for(var phi = 0.0; phi < 2.0 * PI; phi += sampleDelta)
-    {
-        for(var theta = 0.0; theta < 0.5 * PI; theta += sampleDelta)
-        {
+    for(var phi = 0.0; phi < 2.0 * PI; phi += sampleDelta){
+        for(var theta = 0.0; theta < 0.5 * PI; theta += sampleDelta){
             // spherical to cartesian (in tangent space)
             let tangentSample = vec3f(sin(theta) * cos(phi),  sin(theta) * sin(phi), cos(theta));
             // tangent space to world
