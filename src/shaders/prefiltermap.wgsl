@@ -1,5 +1,5 @@
 const PI: f32 = 3.14159265359;
-const invAtan = vec2(0.1591, 0.3183);
+const invAtan = vec2f(0.1591, 0.3183);
 const SAMPLE_COUNT = 1024u;
 
 
@@ -50,17 +50,17 @@ fn ImportanceSampleGGX(Xi: vec2f,  N: vec3f, roughness: f32) -> vec3f {
   let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
 
   // from spherical coordinates to cartesian coordinates - halfway vector
-  vec3 H;
+  vec3f H;
   H.x = cos(phi) * sinTheta;
   H.y = sin(phi) * sinTheta;
   H.z = cosTheta;
 
   // from tangent-space H vector to world-space sample vector
-  vec3 up          = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
-  vec3 tangent   = normalize(cross(up, N));
-  vec3 bitangent = cross(N, tangent);
+  vec3f up          = abs(N.z) < 0.999 ? vec3f(0.0, 0.0, 1.0) : vec3f(1.0, 0.0, 0.0);
+  vec3f tangent   = normalize(cross(up, N));
+  vec3f bitangent = cross(N, tangent);
 
-  vec3 sampleVec = tangent * H.x + bitangent * H.y + N * H.z;
+  vec3f sampleVec = tangent * H.x + bitangent * H.y + N * H.z;
   return normalize(sampleVec);
 }
 
@@ -75,45 +75,45 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     let faces: array<Face, 6> = array(
         // FACES +X
         Face(
-            vec3(1.0, 0.0, 0.0),  // forward
-            vec3(0.0, 1.0, 0.0),  // up
-            vec3(0.0, 0.0, -1.0), // right
+            vec3f(1.0, 0.0, 0.0),  // forward
+            vec3f(0.0, 1.0, 0.0),  // up
+            vec3f(0.0, 0.0, -1.0), // right
         ),
         // FACES -X
         Face (
-            vec3(-1.0, 0.0, 0.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
+            vec3f(-1.0, 0.0, 0.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(0.0, 0.0, 1.0),
         ),
         // FACES +Y
         Face (
-            vec3(0.0, -1.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
-            vec3(1.0, 0.0, 0.0),
+            vec3f(0.0, -1.0, 0.0),
+            vec3f(0.0, 0.0, 1.0),
+            vec3f(1.0, 0.0, 0.0),
         ),
         // FACES -Y
         Face (
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 0.0, -1.0),
-            vec3(1.0, 0.0, 0.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(0.0, 0.0, -1.0),
+            vec3f(1.0, 0.0, 0.0),
         ),
         // FACES +Z
         Face (
-            vec3(0.0, 0.0, 1.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(1.0, 0.0, 0.0),
+            vec3f(0.0, 0.0, 1.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(1.0, 0.0, 0.0),
         ),
         // FACES -Z
         Face (
-            vec3(0.0, 0.0, -1.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(-1.0, 0.0, 0.0),
+            vec3f(0.0, 0.0, -1.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(-1.0, 0.0, 0.0),
         ),
     );
 
     // Get texture coords relative to cubemap face
-    let dstDimensions = vec2<f32>(textureDimensions(dst));
-    let cubeUV = vec2<f32>(gid.xy) / dstDimensions * 2.0 - 1.0;
+    let dstDimensions = vec2f(textureDimensions(dst));
+    let cubeUV = vec2f(gid.xy) / dstDimensions * 2.0 - 1.0;
 
     // Get spherical coordinate from cubeUV
     let face = faces[gid.z];
@@ -144,8 +144,8 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
 
         let mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
 
-        let eqUV = vec2(atan2(L.z, L.x), asin(L.y)) * invAtan + 0.5;
-        let eqPixel = vec2<i32>(eqUV * vec2<f32>(textureDimensions(src)));
+        let eqUV = vec2f(atan2(L.z, L.x), asin(L.y)) * invAtan + 0.5;
+        let eqPixel = vec2i(eqUV * vec2f(textureDimensions(src)));
         prefilteredColor += textureLoad(src, eqPixel, mipLevel).rgb * NdotL;
         totalWeight += NdotL;
       } 

@@ -1,5 +1,5 @@
 const PI: f32 = 3.14159265359;
-const invAtan = vec2(0.1591, 0.3183);
+const invAtan = vec2f(0.1591, 0.3183);
 
 struct Face {
     forward: vec3f,
@@ -20,53 +20,53 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     let faces: array<Face, 6> = array(
         // FACES +X
         Face(
-            vec3(1.0, 0.0, 0.0),  // forward
-            vec3(0.0, 1.0, 0.0),  // up
-            vec3(0.0, 0.0, -1.0), // right
+            vec3f(1.0, 0.0, 0.0),  // forward
+            vec3f(0.0, 1.0, 0.0),  // up
+            vec3f(0.0, 0.0, -1.0), // right
         ),
         // FACES -X
         Face (
-            vec3(-1.0, 0.0, 0.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
+            vec3f(-1.0, 0.0, 0.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(0.0, 0.0, 1.0),
         ),
         // FACES +Y
         Face (
-            vec3(0.0, -1.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
-            vec3(1.0, 0.0, 0.0),
+            vec3f(0.0, -1.0, 0.0),
+            vec3f(0.0, 0.0, 1.0),
+            vec3f(1.0, 0.0, 0.0),
         ),
         // FACES -Y
         Face (
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 0.0, -1.0),
-            vec3(1.0, 0.0, 0.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(0.0, 0.0, -1.0),
+            vec3f(1.0, 0.0, 0.0),
         ),
         // FACES +Z
         Face (
-            vec3(0.0, 0.0, 1.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(1.0, 0.0, 0.0),
+            vec3f(0.0, 0.0, 1.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(1.0, 0.0, 0.0),
         ),
         // FACES -Z
         Face (
-            vec3(0.0, 0.0, -1.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(-1.0, 0.0, 0.0),
+            vec3f(0.0, 0.0, -1.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(-1.0, 0.0, 0.0),
         ),
     );
 
     // Get texture coords relative to cubemap face
-    let dstDimensions = vec2<f32>(textureDimensions(dst));
-    let cubeUV = vec2<f32>(gid.xy) / dstDimensions * 2.0 - 1.0;
+    let dstDimensions = vec2f(textureDimensions(dst));
+    let cubeUV = vec2f(gid.xy) / dstDimensions * 2.0 - 1.0;
 
     // Get spherical coordinate from cubeUV
     let face = faces[gid.z];
     let spherical = normalize(face.forward + face.right * cubeUV.x + face.up * cubeUV.y);
 
     // Get coordinate on the equirectangular texture
-    let eqUV = vec2(atan2(spherical.z, spherical.x), asin(spherical.y)) * invAtan + 0.5;
-    let eqPixel = vec2<i32>(eqUV * vec2<f32>(textureDimensions(src)));
+    let eqUV = vec2f(atan2(spherical.z, spherical.x), asin(spherical.y)) * invAtan + 0.5;
+    let eqPixel = vec2i(eqUV * vec2f(textureDimensions(src)));
 
     // We use textureLoad() as textureSample() is not allowed in compute shaders
     let sample = textureLoad(src, eqPixel, 0);

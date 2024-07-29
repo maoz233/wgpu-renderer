@@ -36,7 +36,7 @@ fn ToneMapACES(hdr: vec3f) -> vec3f {
     let v = m1 * hdr;
     let a = v * (v + 0.0245786) - 0.000090537;
     let b = v * (0.983729 * v + 0.4329510) + 0.238081;
-    return clamp(m2 * (a / b), vec3(0.0), vec3(1.0));
+    return clamp(m2 * (a / b), vec3f(0.0), vec3f(1.0));
 }
 
 @fragment

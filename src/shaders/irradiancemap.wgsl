@@ -1,5 +1,5 @@
 const PI: f32 = 3.14159265359;
-const invAtan = vec2(0.1591, 0.3183);
+const invAtan = vec2f(0.1591, 0.3183);
 
 struct Face {
     forward: vec3f,
@@ -13,63 +13,63 @@ struct Face {
 @compute @workgroup_size(16, 16, 1)
 fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     // If texture size is not divisible by 32, we need to make sure we don't try to write to pixels that don't exist.
-    if gid.x >= u32(textureDimensions(dst).x) {
+    if gid.x >= u32(textureDimensions(dst).x) ||  gid.y >= u32(textureDimensions(dst).y) {
         return;
     }
 
     let faces: array<Face, 6> = array(
         // FACES +X
         Face(
-            vec3(1.0, 0.0, 0.0),  // forward
-            vec3(0.0, 1.0, 0.0),  // up
-            vec3(0.0, 0.0, -1.0), // right
+            vec3f(1.0, 0.0, 0.0),  // forward
+            vec3f(0.0, 1.0, 0.0),  // up
+            vec3f(0.0, 0.0, -1.0), // right
         ),
         // FACES -X
         Face (
-            vec3(-1.0, 0.0, 0.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
+            vec3f(-1.0, 0.0, 0.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(0.0, 0.0, 1.0),
         ),
         // FACES +Y
         Face (
-            vec3(0.0, -1.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
-            vec3(1.0, 0.0, 0.0),
+            vec3f(0.0, -1.0, 0.0),
+            vec3f(0.0, 0.0, 1.0),
+            vec3f(1.0, 0.0, 0.0),
         ),
         // FACES -Y
         Face (
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 0.0, -1.0),
-            vec3(1.0, 0.0, 0.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(0.0, 0.0, -1.0),
+            vec3f(1.0, 0.0, 0.0),
         ),
         // FACES +Z
         Face (
-            vec3(0.0, 0.0, 1.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(1.0, 0.0, 0.0),
+            vec3f(0.0, 0.0, 1.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(1.0, 0.0, 0.0),
         ),
         // FACES -Z
         Face (
-            vec3(0.0, 0.0, -1.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(-1.0, 0.0, 0.0),
+            vec3f(0.0, 0.0, -1.0),
+            vec3f(0.0, 1.0, 0.0),
+            vec3f(-1.0, 0.0, 0.0),
         ),
     );
 
     // Get texture coords relative to cubemap face
-    let dstDimensions = vec2<f32>(textureDimensions(dst));
-    let cubeUV = vec2<f32>(gid.xy) / dstDimensions * 2.0 - 1.0;
+    let dstDimensions = vec2f(textureDimensions(dst));
+    let cubeUV = vec2f(gid.xy) / dstDimensions * 2.0 - 1.0;
 
     // Get spherical coordinate from cubeUV
     let face = faces[gid.z];
     let spherical = normalize(face.forward + face.right * cubeUV.x + face.up * cubeUV.y);
 
     // tangent space calculation from origin point
-    var up    = vec3(0.0, 1.0, 0.0);
+    var up    = vec3f(0.0, 1.0, 0.0);
     let right = normalize(cross(up, spherical));
     up = normalize(cross(spherical, right));
 
-    var irradiance = vec3(0.0);
+    var irradiance = vec3f(0.0);
     let sampleDelta = 0.025;
     var nrSamples = 0;
     for(var phi = 0.0; phi < 2.0 * PI; phi += sampleDelta){
@@ -78,8 +78,8 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
             let tangentSample = vec3f(sin(theta) * cos(phi),  sin(theta) * sin(phi), cos(theta));
             // tangent space to world
             let sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * spherical;
-            let eqUV = vec2(atan2(sampleVec.z, sampleVec.x), asin(sampleVec.y)) * invAtan + 0.5;
-            let eqPixel = vec2<i32>(eqUV * vec2<f32>(textureDimensions(src)));
+            let eqUV = vec2f(atan2(sampleVec.z, sampleVec.x), asin(sampleVec.y)) * invAtan + 0.5;
+            let eqPixel = vec2i(eqUV * vec2f(textureDimensions(src)));
             // We use textureLoad() as textureSample() is not allowed in compute shaders
             irradiance += textureLoad(src, eqPixel, 0).rgb * cos(theta) * sin(theta);
             nrSamples++;
