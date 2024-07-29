@@ -85,25 +85,6 @@ fn GeometrySmithGGX(cosTheta: f32, roughness: f32) -> f32 {
   return numerator / denominator;
 }
 
-// ACES: Academy Color Encoding System
-fn ToneMapACES(hdr: vec3f) -> vec3f {
-    let m1 = mat3x3(
-        0.59719, 0.07600, 0.02840,
-        0.35458, 0.90834, 0.13383,
-        0.04823, 0.01566, 0.83777,
-    );
-    let m2 = mat3x3(
-        1.60475, -0.10208, -0.00327,
-        -0.53108,  1.10813, -0.07276,
-        -0.07367, -0.00605,  1.07602,
-    );
-    let v = m1 * hdr;
-    let a = v * (v + 0.0245786) - 0.000090537;
-    let b = v * (0.983729 * v + 0.4329510) + 0.238081;
-    return clamp(m2 * (a / b), vec3f(0.0), vec3f(1.0));
-}
-
-
 @fragment
 fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let albedo = textureSample(albedoMap, sampler2D, fragData.texCoord).rgb;
@@ -161,10 +142,6 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let ambient =(kD * diffuse) * occlusion;
 
   var color = ambient + Lo + emissive;
-  // HDR Tone Mapping
-  color = ToneMapACES(color);
-  // Gamma Correction
-  color = pow(color, vec3f(1.0 / 2.2));
 
   return vec4f(color, 1.0);
 }
