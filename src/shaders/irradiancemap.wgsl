@@ -81,7 +81,7 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
             let eqUV = vec2(atan2(sampleVec.z, sampleVec.x), asin(sampleVec.y)) * invAtan + 0.5;
             let eqPixel = vec2<i32>(eqUV * vec2<f32>(textureDimensions(src)));
             // We use textureLoad() as textureSample() is not allowed in compute shaders
-            irradiance += textureLoad(src, eqPixel, 0).rgb * cos(theta) * sin(theta);
+            irradiance += pow(textureLoad(src, eqPixel, 0).rgb, vec3f(2.2)) * cos(theta) * sin(theta);
             nrSamples++;
         }
     }

@@ -142,9 +142,15 @@ export default class Renderer {
   }
 
   private async requestDevice(): Promise<void> {
+    const hasFilterableFloat = this.adapter?.features.has("float32-filterable");
+    if (!hasFilterableFloat) {
+      throw new Error("WebGPU device does not support float32 filterable.");
+    }
+
     this.hasTimestamp = this.adapter?.features.has("timestamp-query");
+
     const requiredFeatures: GPUFeatureName[] = this.hasTimestamp
-      ? ["timestamp-query"]
+      ? ["timestamp-query", "float32-filterable"]
       : [];
 
     this.device = await this.adapter?.requestDevice({
@@ -372,7 +378,7 @@ export default class Renderer {
           binding: 0,
           visibility: GPUShaderStage.FRAGMENT,
           texture: {
-            sampleType: "unfilterable-float" as GPUTextureSampleType,
+            sampleType: "float" as GPUTextureSampleType,
             viewDimension: "cube" as GPUTextureViewDimension,
             multisampled: false,
           },
@@ -390,7 +396,7 @@ export default class Renderer {
         {
           binding: 1,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: "non-filtering" as GPUSamplerBindingType },
+          sampler: { type: "filtering" as GPUSamplerBindingType },
         },
       ],
     });
@@ -773,9 +779,9 @@ export default class Renderer {
         addressModeU: "clamp-to-edge",
         addressModeV: "clamp-to-edge",
         addressModeW: "clamp-to-edge",
-        magFilter: "nearest",
-        minFilter: "nearest",
-        mipmapFilter: "nearest",
+        magFilter: "linear",
+        minFilter: "linear",
+        mipmapFilter: "linear",
       });
 
       const renderPipelineIndex = i & 16 ? 1 : 0;
@@ -818,7 +824,7 @@ export default class Renderer {
         {
           binding: 1,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: "non-filtering" as GPUSamplerBindingType },
+          sampler: { type: "filtering" as GPUSamplerBindingType },
         },
       ],
     });
@@ -829,7 +835,7 @@ export default class Renderer {
           binding: 0,
           visibility: GPUShaderStage.FRAGMENT,
           texture: {
-            sampleType: "unfilterable-float" as GPUTextureSampleType,
+            sampleType: "float" as GPUTextureSampleType,
             viewDimension: "cube" as GPUTextureViewDimension,
             multisampled: false,
           },
@@ -890,9 +896,9 @@ export default class Renderer {
       addressModeU: "clamp-to-edge",
       addressModeV: "clamp-to-edge",
       addressModeW: "clamp-to-edge",
-      magFilter: "nearest",
-      minFilter: "nearest",
-      mipmapFilter: "nearest",
+      magFilter: "linear",
+      minFilter: "linear",
+      mipmapFilter: "linear",
     });
 
     for (let i = 0; i < 2; ++i) {
@@ -920,8 +926,8 @@ export default class Renderer {
       const skyboxTexture = this.generateCubemap()(
         this.device,
         this.hdrs[i],
-        1440,
-        CubemapType.SKYBOX
+        32,
+        CubemapType.IRRADIANCE
       );
 
       skyboxTextureViews.push(
@@ -1305,7 +1311,7 @@ export default class Renderer {
               binding: 0,
               visibility: GPUShaderStage.COMPUTE,
               texture: {
-                sampleType: "unfilterable-float" as GPUTextureSampleType,
+                sampleType: "float" as GPUTextureSampleType,
                 viewDimension: "2d" as GPUTextureViewDimension,
                 multisampled: false,
               },
