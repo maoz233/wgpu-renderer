@@ -74,7 +74,11 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     var nrSamples = 0;
     for(var phi = 0.0; phi < 2.0 * PI; phi += sampleDelta){
         for(var theta = 0.0; theta < 0.5 * PI; theta += sampleDelta){
-            let eqUV = vec2f(atan2(spherical.z, spherical.x), asin(spherical.y)) * invAtan + 0.5;
+            // spherical to cartesian (in tangent space)
+            let tangentSample = vec3f(sin(theta) * cos(phi),  sin(theta) * sin(phi), cos(theta));
+            // tangent space to world
+            let sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * spherical;
+            let eqUV = vec2f(atan2(sampleVec.z, sampleVec.x), asin(sampleVec.y)) * invAtan + 0.5;
             let eqPixel = vec2i(eqUV * vec2f(textureDimensions(src)));
             // We use textureLoad() as textureSample() is not allowed in compute shaders
             irradiance += textureLoad(src, eqPixel, 0).rgb * cos(theta) * sin(theta);
