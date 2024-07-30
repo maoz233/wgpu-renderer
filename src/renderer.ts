@@ -281,7 +281,7 @@ export default class Renderer {
     const loader0 = new HDRLoader();
     await loader0.load("images/puresky_4k.hdr");
     const loader1 = new HDRLoader();
-    await loader1.load("images/clear_puresky_4k.hdr");
+    await loader1.load("images/syferfontein_0d_clear_puresky_4k.hdr");
     this.hdrs = [loader0.hdr, loader1.hdr];
   }
 
@@ -926,8 +926,8 @@ export default class Renderer {
       const skyboxTexture = this.generateCubemap()(
         this.device,
         this.hdrs[i],
-        32,
-        CubemapType.IRRADIANCE
+        1440,
+        CubemapType.SKYBOX
       );
 
       skyboxTextureViews.push(

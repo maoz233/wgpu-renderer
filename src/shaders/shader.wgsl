@@ -136,7 +136,7 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   let kS = FresnelSchlickApproximation(max(dot(normal, viewDir), 0.0), f0);
   var kD = vec3f(1.0) - kS;
   kD *= 1.0 - metalness;
-  let irradiance = textureSample(irradianceMap, samplerCube, normal).rgb;
+  let irradiance = textureSample(irradianceMap, samplerCube, normal * vec3f(1.0, 1.0, -1.0)).rgb;
   let diffuse  = irradiance * albedo;
   let ambient = (kD * diffuse) * occlusion;
 
