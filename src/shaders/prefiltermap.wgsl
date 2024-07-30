@@ -9,9 +9,9 @@ struct Face {
     right: vec3f,
 }
 
-@group(0) @binding(0) var src: texture_2d<f32>;
-@group(0) @binding(1) var roughness: f32;
-@group(0) @binding(1) var dst: texture_storage_2d_array<rgba32float, write>;
+@group(0) @binding(0) var<uniform> roughness: f32;
+@group(0) @binding(1) var src: texture_2d<f32>;
+@group(0) @binding(2) var dst: texture_storage_2d_array<rgba32float, write>;
 
 // D: Normal Distribution Function
 fn TrowbridgeReitzGGX(normal: vec3f, halfwayDir: vec3f, roughness: f32) -> f32 {
@@ -29,16 +29,16 @@ fn TrowbridgeReitzGGX(normal: vec3f, halfwayDir: vec3f, roughness: f32) -> f32 {
 
 // http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
 // efficient VanDerCorpus calculation.
-fn RadicalInverseVdC(bits: uint) -> f32 {
-  bits = (bits << 16u) | (bits >> 16u);
-  bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
-  bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
-  bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
-  bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
-  return (bits) * 2.3283064365386963e-10; // / 0x100000000
+fn RadicalInverseVdC(bits: u32) -> f32 {
+  var val = (bits << 16u) | (bits >> 16u);
+  val = ((val & 0x55555555u) << 1u) | ((val & 0xAAAAAAAAu) >> 1u);
+  val = ((val & 0x33333333u) << 2u) | ((val & 0xCCCCCCCCu) >> 2u);
+  val = ((val & 0x0F0F0F0Fu) << 4u) | ((val & 0xF0F0F0F0u) >> 4u);
+  val = ((val & 0x00FF00FFu) << 8u) | ((val & 0xFF00FF00u) >> 8u);
+  return f32(val) * 2.3283064365386963e-10; // / 0x100000000
 }
 
-fn Hammersley(i: uint, N: uint) -> vec2f {
+fn Hammersley(i: u32, N: u32) -> vec2f {
   return vec2f(f32(i)/f32(N), RadicalInverseVdC(i));
 }
 
@@ -50,17 +50,20 @@ fn ImportanceSampleGGX(Xi: vec2f,  N: vec3f, roughness: f32) -> vec3f {
   let sinTheta = sqrt(1.0 - cosTheta * cosTheta);
 
   // from spherical coordinates to cartesian coordinates - halfway vector
-  vec3f H;
-  H.x = cos(phi) * sinTheta;
-  H.y = sin(phi) * sinTheta;
-  H.z = cosTheta;
+  let H = vec3f(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
 
   // from tangent-space H vector to world-space sample vector
-  vec3f up          = abs(N.z) < 0.999 ? vec3f(0.0, 0.0, 1.0) : vec3f(1.0, 0.0, 0.0);
-  vec3f tangent   = normalize(cross(up, N));
-  vec3f bitangent = cross(N, tangent);
+  var up: vec3f;
+  if abs(N.z) < 0.999 {
+    up = vec3f(0.0, 0.0, 1.0);
+  } else {
+    up = vec3f(1.0, 0.0, 0.0);
+  }
 
-  vec3f sampleVec = tangent * H.x + bitangent * H.y + N * H.z;
+  let tangent = normalize(cross(up, N));
+  let bitangent = cross(N, tangent);
+
+  let sampleVec = tangent * H.x + bitangent * H.y + N * H.z;
   return normalize(sampleVec);
 }
 
@@ -123,10 +126,10 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     let R = N;
     let V = R;
 
-    let prefilteredColor = vec3f(0.0);
-    let totalWeight = 0.0;
+    var prefilteredColor = vec3f(0.0);
+    var totalWeight = 0.0;
 
-    for(var i = 0u; i < SAMPLE_COUNT; ++i) {
+    for(var i: u32 = 0u; i < SAMPLE_COUNT; i = i + 1) {
       let Xi = Hammersley(i, SAMPLE_COUNT);
       let H = ImportanceSampleGGX(Xi, N, roughness);
       let L = normalize(2.0 * dot(V, H) * H - V);
@@ -142,11 +145,16 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
         let saTexel  = 4.0 * PI / (6.0 * resolution * resolution);
         let saSample = 1.0 / (f32(SAMPLE_COUNT) * pdf + 0.0001);
 
-        let mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
+        var mipLevel: f32;
+        if  roughness == 0.0 {
+          mipLevel = 0.0;
+        } else {
+          mipLevel = 0.5 * log2(saSample / saTexel);
+        }
 
         let eqUV = vec2f(atan2(L.z, L.x), asin(L.y)) * invAtan + 0.5;
         let eqPixel = vec2i(eqUV * vec2f(textureDimensions(src)));
-        prefilteredColor += textureLoad(src, eqPixel, mipLevel).rgb * NdotL;
+        prefilteredColor += textureLoad(src, eqPixel, 0).rgb * NdotL;
         totalWeight += NdotL;
       } 
     }

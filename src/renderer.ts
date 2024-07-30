@@ -383,6 +383,24 @@ export default class Renderer {
             multisampled: false,
           },
         },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float" as GPUTextureSampleType,
+            viewDimension: "cube" as GPUTextureViewDimension,
+            multisampled: false,
+          },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: "float" as GPUTextureSampleType,
+            viewDimension: "2d" as GPUTextureViewDimension,
+            multisampled: false,
+          },
+        },
       ],
     });
     const bindGroupLayout3 = this.device.createBindGroupLayout({
@@ -728,9 +746,10 @@ export default class Renderer {
       this.bindGroups[1].push(bindGroup);
     }
 
-    let cubeTextures: GPUTexture[] = [];
+    let irradianceMaps: GPUTexture[] = [];
+    let prefilterMaps: GPUTexture[] = [];
     for (let i = 0; i < 2; ++i) {
-      cubeTextures.push(
+      irradianceMaps.push(
         this.generateCubemap()(
           this.device,
           this.hdrs[i],
@@ -738,27 +757,60 @@ export default class Renderer {
           CubemapType.IRRADIANCE
         )
       );
+
+      prefilterMaps.push(
+        this.generateCubemap()(
+          this.device,
+          this.hdrs[i],
+          128,
+          CubemapType.PREFILTER
+        )
+      );
     }
+
+    const brdfImageBitmap = await loadImageBitmap("images/ibl_brdf_lut.png");
+    const brdfLUT = this.createTexture2DFromSource(
+      "GPU Texture: BRDF LUT(Look Up Texture)",
+      brdfImageBitmap,
+      "rgba16float",
+      1
+    );
+    const brdfLUTView = brdfLUT.createView({
+      label: "GPU Texture View: BRDF LUT",
+    });
 
     for (let i = 0; i < 8; ++i) {
       const mipIndex = i & 1 ? 1 : 0;
       const renderPipelineIndex = i & 2 ? 1 : 0;
       const skyboxIndex = i & 4 ? 1 : 0;
 
-      const cubeTextureView = cubeTextures[skyboxIndex].createView({
-        label: `GPU Texture View: Cube ${skyboxIndex}`,
+      const irradiancemapView = irradianceMaps[skyboxIndex].createView({
+        label: `GPU Texture View: Irradiancemap ${skyboxIndex}`,
+        dimension: "cube",
+      });
+
+      const prefiltermapView = prefilterMaps[skyboxIndex].createView({
+        label: `GPU Texture View: Prefiltermap ${skyboxIndex}`,
         dimension: "cube",
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 2: Cube ${mipIndex && "with Mipmaps"} ${
+        label: `GPU Bind Group 2: Irradiancemap, Prefiltermap ${mipIndex && "with Mipmaps"} ${
           renderPipelineIndex && "with MSAA"
         }`,
         layout: this.renderPipelines[renderPipelineIndex].getBindGroupLayout(2),
         entries: [
           {
             binding: 0,
-            resource: cubeTextureView,
+            resource: irradiancemapView,
+          },
+          {
+            binding: 1,
+            resource: prefiltermapView,
+          },
+          {
+            binding: 2,
+            resource: brdfLUTView,
           },
         ],
       });
@@ -1155,7 +1207,10 @@ export default class Renderer {
       let width = texture.width;
       let height = texture.height;
       let baseMipLevel = 0;
-      while (width > 1 || height > 1) {
+      while (
+        (width > 1 || height > 1) &&
+        texture.mipLevelCount > baseMipLevel
+      ) {
         width = Math.max(1, (width / 2) | 0);
         height = Math.max(1, (height / 2) | 0);
 
@@ -1273,7 +1328,9 @@ export default class Renderer {
     t: CubemapType
   ) => GPUTexture {
     const modules = new Map<CubemapType, GPUShaderModule>();
-    let computePipeline: GPUComputePipeline;
+    const computePipelines = new Map<CubemapType, GPUComputePipeline>();
+
+    const context = this;
 
     return function generateCubemap(
       device: GPUDevice,
@@ -1303,35 +1360,68 @@ export default class Renderer {
         modules.set(type, module);
       }
 
-      if (!computePipeline) {
-        const bindGroupLayout = device.createBindGroupLayout({
-          label: "GPU Bind Group Layout: Cubemap Generation",
-          entries: [
-            {
-              binding: 0,
-              visibility: GPUShaderStage.COMPUTE,
-              texture: {
-                sampleType: "float" as GPUTextureSampleType,
-                viewDimension: "2d" as GPUTextureViewDimension,
-                multisampled: false,
+      if (!computePipelines.has(type)) {
+        let bindGroupLayout: GPUBindGroupLayout;
+        if (type !== CubemapType.PREFILTER) {
+          bindGroupLayout = device.createBindGroupLayout({
+            label: "GPU Bind Group Layout: Cubemap Generation",
+            entries: [
+              {
+                binding: 0,
+                visibility: GPUShaderStage.COMPUTE,
+                texture: {
+                  sampleType: "float" as GPUTextureSampleType,
+                  viewDimension: "2d" as GPUTextureViewDimension,
+                  multisampled: false,
+                },
               },
-            },
-            {
-              binding: 1,
-              visibility: GPUShaderStage.COMPUTE,
-              storageTexture: {
-                access: "write-only" as GPUStorageTextureAccess,
-                format: "rgba32float" as GPUTextureFormat,
-                viewDimension: "2d-array" as GPUTextureViewDimension,
+              {
+                binding: 1,
+                visibility: GPUShaderStage.COMPUTE,
+                storageTexture: {
+                  access: "write-only" as GPUStorageTextureAccess,
+                  format: "rgba32float" as GPUTextureFormat,
+                  viewDimension: "2d-array" as GPUTextureViewDimension,
+                },
               },
-            },
-          ],
-        });
+            ],
+          });
+        } else {
+          bindGroupLayout = device.createBindGroupLayout({
+            label: "GPU Bind Group Layout: Cubemap Generation",
+            entries: [
+              {
+                binding: 0,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: { type: "uniform" as GPUBufferBindingType },
+              },
+              {
+                binding: 1,
+                visibility: GPUShaderStage.COMPUTE,
+                texture: {
+                  sampleType: "float" as GPUTextureSampleType,
+                  viewDimension: "2d" as GPUTextureViewDimension,
+                  multisampled: false,
+                },
+              },
+              {
+                binding: 2,
+                visibility: GPUShaderStage.COMPUTE,
+                storageTexture: {
+                  access: "write-only" as GPUStorageTextureAccess,
+                  format: "rgba32float" as GPUTextureFormat,
+                  viewDimension: "2d-array" as GPUTextureViewDimension,
+                },
+              },
+            ],
+          });
+        }
+
         const computePipelineLayout = device.createPipelineLayout({
           label: "GPU Compute Pipeline Layout: Cubemap Generation",
           bindGroupLayouts: [bindGroupLayout],
         });
-        computePipeline = device.createComputePipeline({
+        const computePipeline = device.createComputePipeline({
           label: "GPU Compute Pipeline: Cubemap Generation",
           layout: computePipelineLayout,
           compute: {
@@ -1339,81 +1429,174 @@ export default class Renderer {
             entryPoint: "compute_main",
           },
         });
+        computePipelines.set(type, computePipeline);
       }
 
-      const srcTexture = device.createTexture({
-        label: "GPU Texture: Cubemap Generation Source",
-        size: [hdr.width, hdr.height],
-        format: "rgba32float",
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      });
-      device.queue.writeTexture(
-        {
-          texture: srcTexture,
-          mipLevel: 0,
-          origin: [0, 0, 0],
-        },
-        hdr.data,
-        {
-          offset: 0,
-          bytesPerRow: hdr.width * 4 * Float32Array.BYTES_PER_ELEMENT,
-          rowsPerImage: hdr.height,
-        },
-        {
-          width: hdr.width,
-          height: hdr.height,
-        }
-      );
-      const srcTextureView = srcTexture.createView({
-        label: "GPU Texture View: Cubemap Generation Source",
-        format: "rgba32float",
-        dimension: "2d",
-      });
-
-      const dstTexture = device.createTexture({
-        label: "GPU Texture: Cubemap Generation Destination",
-        size: [size, size, 6],
-        format: "rgba32float",
-        usage:
-          GPUTextureUsage.TEXTURE_BINDING |
-          GPUTextureUsage.STORAGE_BINDING |
-          GPUTextureUsage.COPY_SRC,
-      });
-
-      const dstTextureView = dstTexture.createView({
-        label: "GPU Texture View: Cubemap Generation Destination",
-        format: "rgba32float",
-        dimension: "2d-array",
-      });
-
-      const bindGroup = device.createBindGroup({
-        label: "GPU Bind Group: Cubemap Generation",
-        layout: computePipeline.getBindGroupLayout(0),
-        entries: [
-          {
-            binding: 0,
-            resource: srcTextureView,
-          },
-          {
-            binding: 1,
-            resource: dstTextureView,
-          },
-        ],
-      });
+      const workgroupsNum = Math.floor((size + 15) / 16);
 
       const encoder = device.createCommandEncoder({
         label: "GPU Command Encoder: Cubemap Generation",
       });
 
-      const workgroupsNum = Math.floor((size + 15) / 16);
+      let dstTexture: GPUTexture;
 
-      const pass = encoder.beginComputePass({
-        label: "GPU Compute Pass: Cubemap Generation",
-      });
-      pass.setPipeline(computePipeline);
-      pass.setBindGroup(0, bindGroup);
-      pass.dispatchWorkgroups(workgroupsNum, workgroupsNum, 6);
-      pass.end();
+      if (type !== CubemapType.PREFILTER) {
+        const srcTexture = device.createTexture({
+          label: "GPU Texture: Cubemap Generation Source",
+          size: [hdr.width, hdr.height],
+          format: "rgba32float",
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+        device.queue.writeTexture(
+          {
+            texture: srcTexture,
+            mipLevel: 0,
+            origin: [0, 0, 0],
+          },
+          hdr.data,
+          {
+            offset: 0,
+            bytesPerRow: hdr.width * 4 * Float32Array.BYTES_PER_ELEMENT,
+            rowsPerImage: hdr.height,
+          },
+          {
+            width: hdr.width,
+            height: hdr.height,
+          }
+        );
+        const srcTextureView = srcTexture.createView({
+          label: "GPU Texture View: Cubemap Generation Source",
+          format: "rgba32float",
+          dimension: "2d",
+        });
+
+        dstTexture = device.createTexture({
+          label: "GPU Texture: Cubemap Generation Destination",
+          size: [size, size, 6],
+          format: "rgba32float",
+          usage:
+            GPUTextureUsage.TEXTURE_BINDING |
+            GPUTextureUsage.STORAGE_BINDING |
+            GPUTextureUsage.COPY_SRC,
+        });
+        const dstTextureView = dstTexture.createView({
+          label: "GPU Texture View: Cubemap Generation Destination",
+          format: "rgba32float",
+          dimension: "2d-array",
+        });
+
+        const bindGroup = device.createBindGroup({
+          label: "GPU Bind Group: Cubemap Generation",
+          layout: computePipelines.get(type).getBindGroupLayout(0),
+          entries: [
+            {
+              binding: 0,
+              resource: srcTextureView,
+            },
+            {
+              binding: 1,
+              resource: dstTextureView,
+            },
+          ],
+        });
+
+        const pass = encoder.beginComputePass({
+          label: "GPU Compute Pass: Cubemap Generation",
+        });
+        pass.setPipeline(computePipelines.get(type));
+        pass.setBindGroup(0, bindGroup);
+        pass.dispatchWorkgroups(workgroupsNum, workgroupsNum, 6);
+        pass.end();
+      } else {
+        const srcTexture = device.createTexture({
+          label: "GPU Texture: Cubemap Generation Source",
+          size: [hdr.width, hdr.height],
+          format: "rgba32float",
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+        device.queue.writeTexture(
+          {
+            texture: srcTexture,
+            mipLevel: 0,
+            origin: [0, 0, 0],
+          },
+          hdr.data,
+          {
+            offset: 0,
+            bytesPerRow: hdr.width * 4 * Float32Array.BYTES_PER_ELEMENT,
+            rowsPerImage: hdr.height,
+          },
+          {
+            width: hdr.width,
+            height: hdr.height,
+          }
+        );
+
+        const srcTextureView = srcTexture.createView({
+          label: "GPU Texture View: Cubemap Generation Source",
+          format: "rgba32float",
+          dimension: "2d",
+        });
+
+        dstTexture = device.createTexture({
+          label: "GPU Texture: Cubemap Generation Destination",
+          size: [size, size, 6],
+          format: "rgba32float",
+          usage:
+            GPUTextureUsage.TEXTURE_BINDING |
+            GPUTextureUsage.STORAGE_BINDING |
+            GPUTextureUsage.COPY_SRC,
+        });
+
+        const roughness = new Float32Array([0.05]);
+        const roughnessUniformBuffer = context.createBuffer(
+          `GPU Uniform Buffer: Cubemap Generation Roughness`,
+          4,
+          GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+        );
+        device.queue.writeBuffer(
+          roughnessUniformBuffer,
+          0,
+          roughness.buffer,
+          roughness.byteOffset,
+          roughness.byteLength
+        );
+
+        const dstTextureView = dstTexture.createView({
+          label: "GPU Texture View: Cubemap Generation Destination",
+          format: "rgba32float",
+          dimension: "2d-array",
+        });
+
+        const bindGroup = device.createBindGroup({
+          label: "GPU Bind Group: Cubemap Generation",
+          layout: computePipelines.get(type).getBindGroupLayout(0),
+          entries: [
+            {
+              binding: 0,
+              resource: {
+                buffer: roughnessUniformBuffer,
+              },
+            },
+            {
+              binding: 1,
+              resource: srcTextureView,
+            },
+            {
+              binding: 2,
+              resource: dstTextureView,
+            },
+          ],
+        });
+
+        const pass = encoder.beginComputePass({
+          label: "GPU Compute Pass: Cubemap Generation",
+        });
+        pass.setPipeline(computePipelines.get(type));
+        pass.setBindGroup(0, bindGroup);
+        pass.dispatchWorkgroups(workgroupsNum, workgroupsNum, 6);
+        pass.end();
+      }
 
       device.queue.submit([encoder.finish()]);
 

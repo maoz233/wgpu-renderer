@@ -29,6 +29,8 @@ struct Transform {
 @group(1) @binding(4) var emissiveMap: texture_2d<f32>;
 @group(1) @binding(5) var occlusionMap: texture_2d<f32>;
 @group(2) @binding(0) var irradianceMap: texture_cube<f32>;
+@group(2) @binding(1) var prefilterMap: texture_cube<f32>;
+@group(2) @binding(2) var brdfLUT: texture_2d<f32>;
 @group(3) @binding(0) var sampler2D: sampler;
 @group(3) @binding(1) var samplerCube: sampler;
 
@@ -62,7 +64,10 @@ fn TrowbridgeReitzGGX(normal: vec3f, halfwayDir: vec3f, roughness: f32) -> f32 {
 
 // F: Fresnel Equation
 fn FresnelSchlickApproximation(cosTheta: f32, f0: vec3f) -> vec3f {
-  return f0 + (vec3f(1.0) - f0) * pow(1.0 - cosTheta, 5.0);
+  return f0 + (vec3f(1.0) - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+fn FresnelSchlickRoughnessApproximation(cosTheta: f32, f0: vec3f, roughness: f32) -> vec3f {
+  return f0 + (max(vec3f(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
 // G: Geometry Function
@@ -133,12 +138,19 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
     Lo += (kD * albedo / PI + specular) * radiance * max(dot(normal, lightDir), 0.0);
   }
 
-  let kS = FresnelSchlickApproximation(max(dot(normal, viewDir), 0.0), f0);
+  let kS = FresnelSchlickRoughnessApproximation(max(dot(normal, viewDir), 0.0), f0, roughness);
   var kD = vec3f(1.0) - kS;
   kD *= 1.0 - metalness;
+
   let irradiance = textureSample(irradianceMap, samplerCube, normal * vec3f(1.0, 1.0, -1.0)).rgb;
   let diffuse  = irradiance * albedo;
-  let ambient = (kD * diffuse) * occlusion;
+
+  let reflectDir = reflect(-viewDir, normal);
+  let prefilteredColor = textureSample(prefilterMap, samplerCube, reflectDir * vec3f(1.0, 1.0, -1.0)).rgb;
+  let brdf = textureSample(brdfLUT, sampler2D, vec2f(max(dot(normal, viewDir), 0.0), roughness)).rg;
+  let specular = prefilteredColor * (kS * brdf.x + brdf.y);
+
+  let ambient = (kD * diffuse + specular) * occlusion;
 
   var color = ambient + Lo + emissive;
   // Gamma Correction
