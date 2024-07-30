@@ -1,7 +1,7 @@
 struct VertexInput {
   @location(0) position : vec3f,
   @location(1) texCoord : vec2f,
-  @location(2) normal : vec3f
+  @location(2) normal : vec3f,
 };
 
 struct VertexOut {
@@ -39,7 +39,7 @@ fn vs_main(vertData: VertexInput) -> VertexOut {
   output.position = transform.projection * transform.view * transform.model * vec4f(vertData.position, 1.0);
   output.texCoord = vertData.texCoord;
   output.normal = (transform.normal * vec4f(vertData.normal, 0.0)).xyz;
-  output.pos = (transform.normal * vec4f(vertData.position, 0.0)).xyz;
+  output.pos = (transform.model * vec4f(vertData.position, 1.0)).xyz;
 
   return output;
 }
@@ -61,8 +61,8 @@ fn TrowbridgeReitzGGX(normal: vec3f, halfwayDir: vec3f, roughness: f32) -> f32 {
 }
 
 // F: Fresnel Equation
-fn FresnelSchlickApproximation(cosTheta: f32, f0: vec3f, roughness: f32) -> vec3f {
-  return f0 + (max(vec3f(1.0 -roughness), f0) - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+fn FresnelSchlickApproximation(cosTheta: f32, f0: vec3f) -> vec3f {
+  return f0 + (vec3f(1.0) - f0) * pow(1.0 - cosTheta, 5.0);
 }
 
 // G: Geometry Function
@@ -107,19 +107,19 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
   var f0 = vec3f(0.04);
   f0 = mix(f0, albedo, metalness);
 
-  // relflectance equation
+  // reflectance equation
   var Lo = vec3f(0.0);
 
   for(var i = 0; i < 4; i++) {
     let lightDir = normalize(lightPositions[i] - fragData.pos);
     let halfwayDir = normalize(viewDir + lightDir);
     let distance = length(lightPositions[i] - fragData.pos);
-    let attenuation = 1.0 / pow(distance, 2.0);
+    let attenuation = 1.0 / (distance * distance);
     let radiance = lightColors[i] * attenuation;
 
     // BRDF: Cook-Torrance
     let D = TrowbridgeReitzGGX(normal, halfwayDir, roughness);
-    let F = FresnelSchlickApproximation(max(dot(halfwayDir, viewDir), 0.0), f0, roughness);
+    let F = FresnelSchlickApproximation(max(dot(halfwayDir, viewDir), 0.0), f0);
     let G = GeometrySmith(normal, viewDir, lightDir, roughness);
 
     let kS = F;
@@ -130,20 +130,19 @@ fn fs_main(fragData: VertexOut) -> @location(0) vec4f {
     let denominator = 4.0 * max(dot(normal, viewDir), 0.0) * max(dot(normal, lightDir), 0.0) + 0.001;
     let specular = numerator / denominator;
 
-    Lo += (kD * albedo / PI + specular) * radiance * dot(normal, lightDir);
+    Lo += (kD * albedo / PI + specular) * radiance * max(dot(normal, lightDir), 0.0);
   }
 
-  let kS = FresnelSchlickApproximation(max(dot(normal, viewDir), 0.0), f0, roughness);
+  let kS = FresnelSchlickApproximation(max(dot(normal, viewDir), 0.0), f0);
   var kD = vec3f(1.0) - kS;
   kD *= 1.0 - metalness;
-  let reflectDir = reflect(-viewDir, normal);
-  let irradiance = textureSample(irradianceMap, samplerCube, reflectDir * vec3f(1.0, 1.0, -1.0)).rgb;
+  let irradiance = textureSample(irradianceMap, samplerCube, normal).rgb;
   let diffuse  = irradiance * albedo;
-  let ambient =(kD * diffuse) * occlusion;
+  let ambient = (kD * diffuse) * occlusion;
 
   var color = ambient + Lo + emissive;
   // Gamma Correction
-  color = pow(color, vec3f(1.0/2.2));
+  color = pow(color, vec3f(1.0 / 2.2));
 
   return vec4f(color, 1.0);
 }
