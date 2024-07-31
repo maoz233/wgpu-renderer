@@ -67,12 +67,11 @@ fn ImportanceSampleGGX(Xi: vec2f,  N: vec3f, roughness: f32) -> vec3f {
   return normalize(sampleVec);
 }
 
-@compute
-@workgroup_size(16, 16, 1)
+@compute @workgroup_size(16, 16, 1)
 fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     // If texture size is not divisible by 32, we need to make sure we don't try to write to pixels that don't exist.
-    if gid.x >= u32(textureDimensions(dst).x) {
-        return;
+    if gid.x >= u32(textureDimensions(dst).x) || || gid.y >= u32(textureDimensions(dst).y) {
+      return;
     }
 
     let faces: array<Face, 6> = array(
