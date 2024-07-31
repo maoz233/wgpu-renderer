@@ -15,6 +15,7 @@ import {
 import Camera from "@/camera";
 import glTFLoader, { type Geometry } from "@/glTF";
 import HDRLoader, { type HDR } from "@/hdr";
+import { buffer } from "stream/consumers";
 
 enum CubemapType {
   SKYBOX = "Skybox",
@@ -1612,6 +1613,8 @@ export default class Renderer {
     let module: GPUShaderModule;
     let computePipeline: GPUComputePipeline;
 
+    const context = this;
+
     return function (device: GPUDevice, size: number) {
       if (!module) {
         module = device.createShaderModule({
@@ -1626,6 +1629,11 @@ export default class Renderer {
           entries: [
             {
               binding: 0,
+              visibility: GPUShaderStage.COMPUTE,
+              buffer: { type: "uniform" as GPUBufferBindingType },
+            },
+            {
+              binding: 1,
               visibility: GPUShaderStage.COMPUTE,
               storageTexture: {
                 access: "write-only" as GPUStorageTextureAccess,
@@ -1651,6 +1659,20 @@ export default class Renderer {
 
       const workgroupsNum = Math.floor((size + 15) / 16);
 
+      const sizeValue = new Float32Array([size]);
+      const sizeUniformBuffer = context.createBuffer(
+        `GPU Uniform Buffer: Cubemap Generation Roughness`,
+        4,
+        GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+      );
+      device.queue.writeBuffer(
+        sizeUniformBuffer,
+        0,
+        sizeValue.buffer,
+        sizeValue.byteOffset,
+        sizeValue.byteLength
+      );
+
       let brdfLUT = device.createTexture({
         label: "GPU Texture: BRDF Integration",
         size: [size, size],
@@ -1673,6 +1695,12 @@ export default class Renderer {
         entries: [
           {
             binding: 0,
+            resource: {
+              buffer: sizeUniformBuffer,
+            },
+          },
+          {
+            binding: 1,
             resource: brdfLUTView,
           },
         ],

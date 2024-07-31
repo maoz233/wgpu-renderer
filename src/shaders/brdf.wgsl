@@ -1,7 +1,8 @@
 const PI = 3.14159265359;
 const SAMPLE_COUNT = 1024u;
 
-@group(0) @binding(0) var dst: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(0) var<uniform> size: f32;
+@group(0) @binding(1) var dst: texture_storage_2d<rgba16float, write>;
 
 // http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
 // efficient VanDerCorpus calculation.
@@ -100,6 +101,6 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
       return;
     }
 
-    let integratedBRDF = IntegrateBRDF(f32(gid.x) / 512.0, f32(gid.y) / 512.0);
+    let integratedBRDF = IntegrateBRDF(f32(gid.x) / (size - 1.0), f32(gid.y) / (size - 1.0));
     textureStore(dst, gid.xy, vec4f(integratedBRDF, 1.0, 1.0));
 }
