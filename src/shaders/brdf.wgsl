@@ -55,8 +55,8 @@ fn GeometrySmith(normal: vec3f, viewDir: vec3f, lightDir: vec3f, roughness: f32)
 }
 
 fn GeometrySmithGGX(cosTheta: f32, roughness: f32) -> f32 {
-  let r = (roughness + 1.0);
-  let k = (r * r) / 8.0;
+  let r = roughness;
+  let k = (r * r) / 2.0;
 
   let numerator = cosTheta;
   let denominator = (cosTheta * (1.0 - k) + k);
@@ -95,12 +95,12 @@ fn IntegrateBRDF( NdotV: f32, roughness: f32) -> vec2f {
     return vec2f(A, B);
 }
 
-@compute @workgroup_size(16, 16, 1)
+@compute @workgroup_size(16, 16)
 fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
     if gid.x >= u32(textureDimensions(dst).x) || gid.y >= u32(textureDimensions(dst).y) {
       return;
     }
 
-    let integratedBRDF = IntegrateBRDF(f32(gid.x) / (size - 1.0), f32(gid.y) / (size - 1.0));
-    textureStore(dst, gid.xy, vec4f(integratedBRDF, 1.0, 1.0));
+    let integratedBRDF = IntegrateBRDF(f32(gid.x) / (size - 1.0), (size - f32(gid.y)) / (size - 1.0));
+    textureStore(dst, gid.xy, vec4f(integratedBRDF, 0.0, 1.0));
 }

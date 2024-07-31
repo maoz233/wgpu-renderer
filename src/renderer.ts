@@ -1676,6 +1676,7 @@ export default class Renderer {
       let brdfLUT = device.createTexture({
         label: "GPU Texture: BRDF Integration",
         size: [size, size],
+        mipLevelCount: 1,
         format: "rgba16float",
         usage:
           GPUTextureUsage.TEXTURE_BINDING |
@@ -1715,7 +1716,7 @@ export default class Renderer {
       });
       pass.setPipeline(computePipeline);
       pass.setBindGroup(0, bindGroup);
-      pass.dispatchWorkgroups(workgroupsNum, workgroupsNum, 6);
+      pass.dispatchWorkgroups(workgroupsNum, workgroupsNum);
       pass.end();
 
       device.queue.submit([encoder.finish()]);
