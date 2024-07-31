@@ -151,10 +151,19 @@ fn compute_main(@builtin(global_invocation_id) gid: vec3u) {
         } else {
           mipLevel = 0.5 * log2(saSample / saTexel);
         }
+        let mipLevel0 = i32(floor(mipLevel));
+        let mipLevel1 = mipLevel0 + 1;
+        let mixFactor = mipLevel - f32(mipLevel0);
 
-        let eqUV = vec2f(atan2(L.z, L.x), asin(L.y)) * invAtan + 0.5;
-        let eqPixel = vec2i(eqUV * vec2f(textureDimensions(src)));
-        prefilteredColor += textureLoad(src, eqPixel, 0).rgb * NdotL;
+        let eqUV0 = vec2f(atan2(L.z, L.x), asin(L.y)) * invAtan + 0.5;
+        let eqPixel0 = vec2i(eqUV0 * vec2f(textureDimensions(src, mipLevel0)));
+        let texel0 = textureLoad(src, eqPixel0, mipLevel0).rgb * NdotL;
+
+        let eqUV1 = vec2f(atan2(L.z, L.x), asin(L.y)) * invAtan + 0.5;
+        let eqPixel1 = vec2i(eqUV1 * vec2f(textureDimensions(src, mipLevel1)));
+        let texel1 = textureLoad(src, eqPixel1, mipLevel1).rgb * NdotL;
+
+        prefilteredColor += mix(texel0, texel1, mixFactor);
         totalWeight += NdotL;
       } 
     }
