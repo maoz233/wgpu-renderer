@@ -4,6 +4,7 @@ import skyboxShaderCode from "@/shaders/skybox.wgsl";
 import equirectangularShaderCode from "@/shaders/equirectangular.wgsl";
 import irradiancemapShaderCode from "@/shaders/irradiancemap.wgsl";
 import prefiltermapShaderCode from "@/shaders/prefiltermap.wgsl";
+import brdfShaderCode from "@/shaders/brdf.wgsl";
 import { mat4, utils, vec3 } from "wgpu-matrix";
 import { GUI, GUIController } from "dat.gui";
 import {
@@ -768,13 +769,7 @@ export default class Renderer {
       );
     }
 
-    const brdfImageBitmap = await loadImageBitmap("images/ibl_brdf_lut.png");
-    const brdfLUT = this.createTexture2DFromSource(
-      "GPU Texture: BRDF LUT(Look Up Texture)",
-      brdfImageBitmap,
-      "rgba16float",
-      1
-    );
+    const brdfLUT = this.generateBRDFLUT()(this.device, 512);
     const brdfLUTView = brdfLUT.createView({
       label: "GPU Texture View: BRDF LUT",
     });
@@ -1610,6 +1605,94 @@ export default class Renderer {
       device.queue.submit([encoder.finish()]);
 
       return dstTexture;
+    };
+  }
+
+  private generateBRDFLUT(): (d: GPUDevice, s: number) => GPUTexture {
+    let module: GPUShaderModule;
+    let computePipeline: GPUComputePipeline;
+
+    return function (device: GPUDevice, size: number) {
+      if (!module) {
+        module = device.createShaderModule({
+          label: `GPU Shader Module: BRDF Integration`,
+          code: brdfShaderCode,
+        });
+      }
+
+      if (!computePipeline) {
+        const bindGroupLayout = device.createBindGroupLayout({
+          label: "GPU Bind Group Layout: BRDF Integration",
+          entries: [
+            {
+              binding: 0,
+              visibility: GPUShaderStage.COMPUTE,
+              storageTexture: {
+                access: "write-only" as GPUStorageTextureAccess,
+                format: "rgba16float" as GPUTextureFormat,
+                viewDimension: "2d" as GPUTextureViewDimension,
+              },
+            },
+          ],
+        });
+        const computePipelineLayout = device.createPipelineLayout({
+          label: "GPU Compute Pipeline Layout: BRDF Integration",
+          bindGroupLayouts: [bindGroupLayout],
+        });
+        computePipeline = device.createComputePipeline({
+          label: "GPU Compute Pipeline: BRDF Integration",
+          layout: computePipelineLayout,
+          compute: {
+            module,
+            entryPoint: "compute_main",
+          },
+        });
+      }
+
+      const workgroupsNum = Math.floor((size + 15) / 16);
+
+      let brdfLUT = device.createTexture({
+        label: "GPU Texture: BRDF Integration",
+        size: [size, size],
+        format: "rgba16float",
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.STORAGE_BINDING |
+          GPUTextureUsage.COPY_SRC,
+      });
+
+      const brdfLUTView = brdfLUT.createView({
+        label: "GPU Texture View: BRDF Integration",
+        format: "rgba16float",
+        dimension: "2d",
+      });
+
+      const bindGroup = device.createBindGroup({
+        label: "GPU Bind Group: BRDF Integration",
+        layout: computePipeline.getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: brdfLUTView,
+          },
+        ],
+      });
+
+      const encoder = device.createCommandEncoder({
+        label: "GPU Command Encoder: BRDF Integration",
+      });
+
+      const pass = encoder.beginComputePass({
+        label: "GPU Compute Pass: BRDF Integration",
+      });
+      pass.setPipeline(computePipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.dispatchWorkgroups(workgroupsNum, workgroupsNum, 6);
+      pass.end();
+
+      device.queue.submit([encoder.finish()]);
+
+      return brdfLUT;
     };
   }
 
