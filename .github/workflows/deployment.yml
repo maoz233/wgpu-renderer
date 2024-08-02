@@ -1,4 +1,4 @@
-# Sample workflow for building and deploying a Next.js site to GitHub Pages
+# Sample workflow for building and deploying a static site to GitHub Pages
 #
 name: Deploy static site to Pages
 
@@ -58,7 +58,7 @@ jobs:
       - name: Install dependencies
         run: ${{ steps.detect-package-manager.outputs.manager }} ${{ steps.detect-package-manager.outputs.command }}
       - name: Build
-        run: ${{ steps.detect-package-manager.outputs.runner }} build
+        run:  ${{ steps.detect-package-manager.outputs.manager }} build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
