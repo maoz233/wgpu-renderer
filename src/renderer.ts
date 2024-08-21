@@ -15,7 +15,6 @@ import {
 import Camera from "@/camera";
 import glTFLoader, { type Geometry } from "@/glTF";
 import HDRLoader, { type HDR } from "@/hdr";
-import { buffer } from "stream/consumers";
 
 enum CubemapType {
   SKYBOX = "Skybox",
@@ -128,6 +127,12 @@ export default class Renderer {
     await this.createSkyboxUniformBuffer();
 
     this.initGUI();
+
+    this.canvas.setAttribute("style", "visibility: visible;");
+    const spinner = document.querySelector("div.lds-spinner");
+    if (spinner) {
+      document.body.removeChild(spinner);
+    }
   }
 
   private checkWebGPUSupport(): void {
@@ -197,6 +202,7 @@ export default class Renderer {
     if (!this.canvas) {
       throw new Error("Failed to find canvas element.");
     }
+    this.canvas.setAttribute("style", "visibility: hidden;");
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -791,9 +797,9 @@ export default class Renderer {
       });
 
       const bindGroup = this.device.createBindGroup({
-        label: `GPU Bind Group 2: Irradiancemap, Prefiltermap ${mipIndex && "with Mipmaps"} ${
-          renderPipelineIndex && "with MSAA"
-        }`,
+        label: `GPU Bind Group 2: Irradiancemap, Prefiltermap ${
+          mipIndex && "with Mipmaps"
+        } ${renderPipelineIndex && "with MSAA"}`,
         layout: this.renderPipelines[renderPipelineIndex].getBindGroupLayout(2),
         entries: [
           {
