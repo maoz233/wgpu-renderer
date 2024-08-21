@@ -1739,6 +1739,10 @@ export default class Renderer {
       width: 300,
     });
 
+    if (window.location.hash !== "#debug") {
+      gui.hide()
+    }
+
     // profiling GUI
     const profiler = { fps: "0", cpuTime: "0", gpuTime: "0" };
 
